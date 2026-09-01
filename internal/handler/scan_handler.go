@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -33,7 +34,9 @@ type InitiateScanRequest struct {
 }
 
 // ListScans handles GET /api/scans.
-// Supports optional ?page=&limit= query parameters for pagination.
+// Supports optional ?page=&limit= query parameters for pagination,
+// ?search= for free-text search, and ?from_date=/&to_date= for date range filtering.
+// Dates must be provided in RFC3339 format.
 func (h *ScanHandler) ListScans(c *gin.Context) {
 	ctx := c.Request.Context()
 	page, limit, hasPagination := ParsePagination(c)
@@ -41,7 +44,12 @@ func (h *ScanHandler) ListScans(c *gin.Context) {
 	if hasPagination {
 		onlyWithDeviations := c.Query("has_deviations") == "true"
 		search := c.Query("search")
-		paginated, err := h.scanService.ListScanJobsPaginated(ctx, page, limit, onlyWithDeviations, search)
+		fromDate, toDate, err := parseScanDateRange(c)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		paginated, err := h.scanService.ListScanJobsPaginated(ctx, page, limit, onlyWithDeviations, search, fromDate, toDate)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -135,6 +143,25 @@ func ParsePagination(c *gin.Context) (page, limit int, ok bool) {
 	return page, limit, true
 }
 
+// parseScanDateRange reads optional from_date and to_date query parameters in RFC3339 format.
+func parseScanDateRange(c *gin.Context) (fromDate, toDate *time.Time, err error) {
+	if v := c.Query("from_date"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid from_date: %w", err)
+		}
+		fromDate = &t
+	}
+	if v := c.Query("to_date"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid to_date: %w", err)
+		}
+		toDate = &t
+	}
+	return fromDate, toDate, nil
+}
+
 // InitiateScan handles POST /api/scans.
 func (h *ScanHandler) InitiateScan(c *gin.Context) {
 	var req InitiateScanRequest
@@ -175,8 +202,9 @@ func (h *ScanHandler) ScanCallback(c *gin.Context) {
 	defer c.Request.Body.Close()
 
 	// Try the new envelope format first.
+	// A final summary callback may contain only ansible_job_id + failed_hosts with no hosts.
 	var envelope models.CallbackEnvelope
-	if err := json.Unmarshal(body, &envelope); err == nil && envelope.AnsibleJobID != nil && len(envelope.Hosts) > 0 {
+	if err := json.Unmarshal(body, &envelope); err == nil && envelope.AnsibleJobID != nil {
 		jobID := normalizeAnsibleJobID(envelope.AnsibleJobID)
 		if jobID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ansible_job_id"})

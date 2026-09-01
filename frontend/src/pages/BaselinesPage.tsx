@@ -200,7 +200,7 @@ export default function BaselinesPage() {
               value={form.os_type}
               onChange={(e) => setForm({ ...form, os_type: e.target.value })}
             >
-              <option value="linux">Linux</option>
+              <option value="linux">RHEL</option>
               <option value="solaris">Solaris</option>
               <option value="aix">AIX</option>
             </select>

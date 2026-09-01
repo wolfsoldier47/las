@@ -23,7 +23,7 @@ type ScanRepository interface {
 	GetScanJobByAnsibleJobID(ctx context.Context, ansibleJobID string) (*models.ScanJob, error)
 	ListScanJobs(ctx context.Context) ([]models.ScanJob, error)
 	ListScanJobsPaginated(ctx context.Context, page, limit int) ([]models.ScanJob, int, error)
-	ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string) ([]models.ScanJobSummary, int, error)
+	ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) ([]models.ScanJobSummary, int, error)
 	HasActiveScanJob(ctx context.Context) (bool, error)
 	UpdateScanJob(ctx context.Context, job *models.ScanJob) error
 	UpdateScanJobStatus(ctx context.Context, job *models.ScanJob) error
@@ -272,7 +272,7 @@ func (r *PgScanRepository) ListScanJobsPaginated(ctx context.Context, page, limi
 // unauthorized and allowed deviation counts. When onlyWithDeviations is true,
 // only jobs with at least one deviation (unauthorized or allowed) are returned.
 // The optional search term matches id, ansible_job_id, limit, initiated_by, or error_message.
-func (r *PgScanRepository) ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string) ([]models.ScanJobSummary, int, error) {
+func (r *PgScanRepository) ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) ([]models.ScanJobSummary, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -304,6 +304,14 @@ func (r *PgScanRepository) ListScanJobsPaginatedWithDeviationCounts(ctx context.
 	if search != "" {
 		where += ` AND (j.id::text ILIKE $1 OR j.ansible_job_id ILIKE $1 OR j."limit" ILIKE $1 OR j.initiated_by ILIKE $1 OR j.error_message ILIKE $1)`
 		args = append(args, "%"+search+"%")
+	}
+	if fromDate != nil {
+		where += fmt.Sprintf(` AND j.created_at >= $%d`, len(args)+1)
+		args = append(args, *fromDate)
+	}
+	if toDate != nil {
+		where += fmt.Sprintf(` AND j.created_at <= $%d`, len(args)+1)
+		args = append(args, *toDate)
 	}
 
 	countQuery := "SELECT COUNT(*) FROM scan_jobs j" + where

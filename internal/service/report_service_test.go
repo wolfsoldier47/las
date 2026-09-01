@@ -26,7 +26,7 @@ func (f *fakeScanServiceForReport) RecordFailedHosts(context.Context, string, []
 func (f *fakeScanServiceForReport) ListScanJobs(context.Context) ([]models.ScanJob, error) {
 	return nil, nil
 }
-func (f *fakeScanServiceForReport) ListScanJobsPaginated(context.Context, int, int, bool, string) (*PaginatedScanJobs, error) {
+func (f *fakeScanServiceForReport) ListScanJobsPaginated(context.Context, int, int, bool, string, *time.Time, *time.Time) (*PaginatedScanJobs, error) {
 	return nil, nil
 }
 func (f *fakeScanServiceForReport) GetScanDetail(context.Context, uuid.UUID, bool) (*ScanDetail, error) {

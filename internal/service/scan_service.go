@@ -29,7 +29,7 @@ type ScanService interface {
 	ProcessCallbackEnvelope(ctx context.Context, ansibleJobID string, hosts []models.CallbackPayload, failedHosts []string) error
 	RecordFailedHosts(ctx context.Context, ansibleJobID string, hostnames []string) error
 	ListScanJobs(ctx context.Context) ([]models.ScanJob, error)
-	ListScanJobsPaginated(ctx context.Context, page, limit int, onlyWithDeviations bool, search string) (*PaginatedScanJobs, error)
+	ListScanJobsPaginated(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) (*PaginatedScanJobs, error)
 	GetScanDetail(ctx context.Context, scanJobID uuid.UUID, includeIncidents bool) (*ScanDetail, error)
 	GetScanDetailPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, includeIncidents bool) (*PaginatedScanDetail, error)
 	GetHostResult(ctx context.Context, scanJobID, hostID uuid.UUID) (*HostScanDetail, error)
@@ -332,6 +332,10 @@ func (s *DefaultScanService) ProcessCallback(ctx context.Context, payload models
 // shared background worker pool. The HTTP handler returns immediately, so AAP does not
 // time out while the database catches up.
 func (s *DefaultScanService) ProcessCallbackEnvelope(ctx context.Context, ansibleJobID string, hosts []models.CallbackPayload, failedHosts []string) error {
+	// Drop empty/blank failed host entries so an empty failed_hosts array (or one
+	// containing blank strings) does not create phantom failed-host rows.
+	failedHosts = filterNonEmpty(failedHosts)
+
 	fmt.Printf("[ENVELOPE] job=%s hosts=%d failed=%d queue_depth=%d\n", ansibleJobID, len(hosts), len(failedHosts), len(s.callbackQueue))
 
 	// Validate the scan job once per envelope so the HTTP handler can return a
@@ -356,6 +360,10 @@ func (s *DefaultScanService) ProcessCallbackEnvelope(ctx context.Context, ansibl
 	}
 
 	for _, h := range hosts {
+		// Skip callbacks with no hostname to avoid creating empty inventory rows.
+		if strings.TrimSpace(h.MachineName) == "" {
+			continue
+		}
 		h.JobID = ansibleJobID
 		s.callbackQueue <- callbackJob{payload: h}
 	}
@@ -399,8 +407,8 @@ func (s *DefaultScanService) ListScanJobs(ctx context.Context) ([]models.ScanJob
 }
 
 // ListScanJobsPaginated returns a page of scan jobs.
-func (s *DefaultScanService) ListScanJobsPaginated(ctx context.Context, page, limit int, onlyWithDeviations bool, search string) (*PaginatedScanJobs, error) {
-	jobs, total, err := s.scanRepo.ListScanJobsPaginatedWithDeviationCounts(ctx, page, limit, onlyWithDeviations, search)
+func (s *DefaultScanService) ListScanJobsPaginated(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) (*PaginatedScanJobs, error) {
+	jobs, total, err := s.scanRepo.ListScanJobsPaginatedWithDeviationCounts(ctx, page, limit, onlyWithDeviations, search, fromDate, toDate)
 	if err != nil {
 		return nil, fmt.Errorf("list scan jobs paginated: %w", err)
 	}
@@ -580,45 +588,45 @@ func (s *DefaultScanService) PollActiveScans(ctx context.Context) error {
 		}
 
 		aapJobID, err := parseAAPJobID(job.AnsibleJobID)
-		if err != nil {
-			continue
-		}
-
-		aapJob, err := s.aapClient.GetJob(ctx, aapJobID)
-		if err != nil {
-			if errors.Is(err, aap.ErrJobNotFound) {
-				job.Status = models.ScanJobStatusFailed
-				job.ErrorMessage = "AAP job not found; marked as stale"
-				job.CompletedAt = &now
-				job.UpdatedAt = now
-				if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
-					slog.Error("failed to mark stale scan job", "scan_job_id", job.ID, "error", err)
-				}
-				// Release the single-scan lock so a new scan can be started.
-				s.releaseScanLock()
-			}
-			// If AAP is unreachable, fall through to the generic staleness check below.
-		} else {
-			newStatus := mapAAPStatus(aapJob.Status)
-			if newStatus != job.Status {
-				job.Status = newStatus
-				job.UpdatedAt = now
-				if newStatus == models.ScanJobStatusCompleted || newStatus == models.ScanJobStatusFailed || newStatus == models.ScanJobStatusCancelled {
+		if err == nil {
+			aapJob, err := s.aapClient.GetJob(ctx, aapJobID)
+			if err != nil {
+				if errors.Is(err, aap.ErrJobNotFound) {
+					job.Status = models.ScanJobStatusFailed
+					job.ErrorMessage = "AAP job not found; marked as stale"
 					job.CompletedAt = &now
-					// Release the single-scan lock when the job reaches a terminal state.
+					job.UpdatedAt = now
+					if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
+						slog.Error("failed to mark stale scan job", "scan_job_id", job.ID, "error", err)
+					}
+					// Release the single-scan lock so a new scan can be started.
 					s.releaseScanLock()
 				}
-				if aapJob.Failed && job.ErrorMessage == "" {
-					job.ErrorMessage = "AAP job failed"
-				}
-				if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
-					slog.Error("failed to update scan job status", "scan_job_id", job.ID, "error", err)
+				// If AAP is unreachable, fall through to the generic staleness check below.
+			} else {
+				newStatus := mapAAPStatus(aapJob.Status)
+				if newStatus != job.Status {
+					job.Status = newStatus
+					job.UpdatedAt = now
+					if newStatus == models.ScanJobStatusCompleted || newStatus == models.ScanJobStatusFailed || newStatus == models.ScanJobStatusCancelled {
+						job.CompletedAt = &now
+						// Release the single-scan lock when the job reaches a terminal state.
+						s.releaseScanLock()
+					}
+					if aapJob.Failed && job.ErrorMessage == "" {
+						job.ErrorMessage = "AAP job failed"
+					}
+					if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
+						slog.Error("failed to update scan job status", "scan_job_id", job.ID, "error", err)
+					}
 				}
 			}
 		}
+		// If parseAAPJobID failed (non-integer ansible_job_id), we also fall through
+		// to the generic staleness check so seed/test jobs do not stay stuck forever.
 
 		// Mark jobs that have not reached a terminal state within the timeout as stale.
-		// This covers AAP unreachable, lost callbacks, or any other hang.
+		// This covers AAP unreachable, lost callbacks, unparseable AAP job IDs, or any other hang.
 		if job.Status == models.ScanJobStatusRunning || job.Status == models.ScanJobStatusInitiating {
 			ref := job.CreatedAt
 			if job.StartedAt != nil {
@@ -661,8 +669,11 @@ func mapAAPStatus(status string) models.ScanJobStatus {
 	}
 }
 
-
 func (s *DefaultScanService) resolveOrCreateHost(ctx context.Context, payload models.CallbackPayload) (*models.Host, error) {
+	if strings.TrimSpace(payload.MachineName) == "" {
+		return nil, fmt.Errorf("machine_name is empty")
+	}
+
 	host, err := s.hostRepo.GetByHostname(ctx, payload.MachineName)
 	if err != nil && err != repository.ErrHostNotFound {
 		return nil, err
@@ -776,6 +787,17 @@ func entriesToRawContent(entries []map[string]string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// filterNonEmpty returns a new slice with only non-empty, non-blank strings.
+func filterNonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // captureBaselineSnapshot records the active master file versions for a scan job.

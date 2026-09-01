@@ -2,28 +2,36 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 
+	"ulas-service/internal/aap"
+	"ulas-service/internal/config"
 	"ulas-service/internal/repository"
 	"ulas-service/models"
 )
 
 // testScanRepo is an in-memory scan repository that can return a pre-registered job.
 type testScanRepo struct {
-	mu      sync.Mutex
-	jobs    map[string]*models.ScanJob
-	results map[uuid.UUID]*models.ScanResult
+	mu              sync.Mutex
+	jobs            map[string]*models.ScanJob
+	results         map[uuid.UUID]*models.ScanResult
+	listJobs        []models.ScanJob
+	updatedStatuses map[uuid.UUID]*models.ScanJob
 }
 
 func newTestScanRepo() *testScanRepo {
 	return &testScanRepo{
-		jobs:    make(map[string]*models.ScanJob),
-		results: make(map[uuid.UUID]*models.ScanResult),
+		jobs:            make(map[string]*models.ScanJob),
+		results:         make(map[uuid.UUID]*models.ScanResult),
+		updatedStatuses: make(map[uuid.UUID]*models.ScanJob),
 	}
 }
 
@@ -31,6 +39,18 @@ func (r *testScanRepo) registerJob(job *models.ScanJob) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.jobs[job.AnsibleJobID] = job
+}
+
+func (r *testScanRepo) setListJobs(jobs []models.ScanJob) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.listJobs = jobs
+}
+
+func (r *testScanRepo) getUpdatedJob(id uuid.UUID) *models.ScanJob {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.updatedStatuses[id]
 }
 
 func (r *testScanRepo) getResultCount() int {
@@ -52,16 +72,25 @@ func (r *testScanRepo) GetScanJobByAnsibleJobID(ctx context.Context, ansibleJobI
 	}
 	return job, nil
 }
-func (r *testScanRepo) ListScanJobs(ctx context.Context) ([]models.ScanJob, error) { return nil, nil }
+func (r *testScanRepo) ListScanJobs(ctx context.Context) ([]models.ScanJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.listJobs, nil
+}
 func (r *testScanRepo) ListScanJobsPaginated(ctx context.Context, page, limit int) ([]models.ScanJob, int, error) {
 	return nil, 0, nil
 }
-func (r *testScanRepo) ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string) ([]models.ScanJobSummary, int, error) {
+func (r *testScanRepo) ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) ([]models.ScanJobSummary, int, error) {
 	return nil, 0, nil
 }
 func (r *testScanRepo) HasActiveScanJob(ctx context.Context) (bool, error) { return false, nil }
 func (r *testScanRepo) UpdateScanJob(ctx context.Context, job *models.ScanJob) error { return nil }
-func (r *testScanRepo) UpdateScanJobStatus(ctx context.Context, job *models.ScanJob) error { return nil }
+func (r *testScanRepo) UpdateScanJobStatus(ctx context.Context, job *models.ScanJob) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.updatedStatuses[job.ID] = job
+	return nil
+}
 func (r *testScanRepo) UpdateScanJobLaunch(ctx context.Context, job *models.ScanJob) error { return nil }
 func (r *testScanRepo) CreateScanResult(ctx context.Context, result *models.ScanResult) error {
 	r.mu.Lock()
@@ -341,5 +370,126 @@ func TestProcessCallbackEnvelope_100NonCompliantHosts(t *testing.T) {
 
 	if incidentRepo.Count() != hostCount {
 		t.Errorf("expected %d incidents, got %d", hostCount, incidentRepo.Count())
+	}
+}
+
+func TestPollActiveScans_MarksStaleRunningJob(t *testing.T) {
+	ctx := context.Background()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/controller/v2/jobs/123/" {
+			_ = json.NewEncoder(w).Encode(aap.JobResponse{ID: 123, Status: "running", Failed: false})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	client := aap.NewClient(server.URL+"/api/controller/v2/", "user", "pass")
+
+	scanRepo := newTestScanRepo()
+	hostRepo := newMemHostRepo(&models.Host{ID: uuid.New(), Hostname: "h1.example.com"})
+	snapshotRepo := newMemSnapshotRepo()
+	baselineRepo := &memBaselineRepo{}
+	incidentRepo := &memIncidentRepo{}
+
+	cfg := &config.AppConfig{StaleScanTimeout: 1}
+
+	svc := NewDefaultScanService(
+		scanRepo,
+		hostRepo,
+		snapshotRepo,
+		incidentRepo,
+		baselineRepo,
+		client,
+		&noopComparisonService{},
+		"test-template",
+		"http://localhost:8080",
+		"test",
+		cfg,
+	)
+
+	startedAt := time.Now().UTC().Add(-2 * time.Minute)
+	jobID := uuid.New()
+	job := models.ScanJob{
+		ID:            jobID,
+		AnsibleJobID:  "123",
+		JobTemplateID: 1,
+		Status:        models.ScanJobStatusRunning,
+		StartedAt:     &startedAt,
+		CreatedAt:     startedAt,
+		UpdatedAt:     startedAt,
+	}
+	scanRepo.setListJobs([]models.ScanJob{job})
+
+	if err := svc.PollActiveScans(ctx); err != nil {
+		t.Fatalf("PollActiveScans failed: %v", err)
+	}
+
+	updated := scanRepo.getUpdatedJob(jobID)
+	if updated == nil {
+		t.Fatalf("expected scan job to be updated")
+	}
+	if updated.Status != models.ScanJobStatusFailed {
+		t.Errorf("expected status %q, got %q", models.ScanJobStatusFailed, updated.Status)
+	}
+	if updated.ErrorMessage == "" {
+		t.Errorf("expected error message to be set")
+	}
+	if updated.CompletedAt == nil {
+		t.Errorf("expected completed_at to be set")
+	}
+}
+
+func TestPollActiveScans_MarksStaleJobWithNonIntegerAAPID(t *testing.T) {
+	ctx := context.Background()
+
+	scanRepo := newTestScanRepo()
+	hostRepo := newMemHostRepo(&models.Host{ID: uuid.New(), Hostname: "h1.example.com"})
+	snapshotRepo := newMemSnapshotRepo()
+	baselineRepo := &memBaselineRepo{}
+	incidentRepo := &memIncidentRepo{}
+
+	cfg := &config.AppConfig{StaleScanTimeout: 1}
+
+	svc := NewDefaultScanService(
+		scanRepo,
+		hostRepo,
+		snapshotRepo,
+		incidentRepo,
+		baselineRepo,
+		nil, // no AAP client needed because the ID cannot be parsed
+		&noopComparisonService{},
+		"test-template",
+		"http://localhost:8080",
+		"test",
+		cfg,
+	)
+
+	createdAt := time.Now().UTC().Add(-2 * time.Minute)
+	jobID := uuid.New()
+	job := models.ScanJob{
+		ID:            jobID,
+		AnsibleJobID:  "seed-100-noncompliant",
+		JobTemplateID: 1,
+		Status:        models.ScanJobStatusRunning,
+		CreatedAt:     createdAt,
+		UpdatedAt:     createdAt,
+	}
+	scanRepo.setListJobs([]models.ScanJob{job})
+
+	if err := svc.PollActiveScans(ctx); err != nil {
+		t.Fatalf("PollActiveScans failed: %v", err)
+	}
+
+	updated := scanRepo.getUpdatedJob(jobID)
+	if updated == nil {
+		t.Fatalf("expected scan job to be updated")
+	}
+	if updated.Status != models.ScanJobStatusFailed {
+		t.Errorf("expected status %q, got %q", models.ScanJobStatusFailed, updated.Status)
+	}
+	if updated.CompletedAt == nil {
+		t.Errorf("expected completed_at to be set")
 	}
 }

@@ -34,7 +34,7 @@ func (r *memScanRepo) ListScanJobs(ctx context.Context) ([]models.ScanJob, error
 func (r *memScanRepo) ListScanJobsPaginated(ctx context.Context, page, limit int) ([]models.ScanJob, int, error) {
 	return nil, 0, nil
 }
-func (r *memScanRepo) ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string) ([]models.ScanJobSummary, int, error) {
+func (r *memScanRepo) ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) ([]models.ScanJobSummary, int, error) {
 	return nil, 0, nil
 }
 func (r *memScanRepo) HasActiveScanJob(ctx context.Context) (bool, error) { return false, nil }

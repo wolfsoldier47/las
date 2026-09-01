@@ -133,7 +133,7 @@ func Load() {
 			// LDAPUseSSL:       getEnv("LDAP_USE_SSL", "true") == "true",
 			// LDAPSkipTLS:      getEnv("LDAP_SKIP_TLS", "true") == "true",
 
-			StaleScanTimeout: getEnvAsInt("STALE_SCAN_TIMEOUT", 2880), //stalescan is in minutes
+			StaleScanTimeout: getEnvAsInt("STALE_SCAN_TIMEOUT", 1), //stalescan is in minutes
 		}
 
 		if err := instance.loadOSVersions(); err != nil {

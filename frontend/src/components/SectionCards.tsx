@@ -3,7 +3,6 @@ import api from '../api/client'
 
 interface Host { id: string }
 interface Deviation { id: string; is_active: boolean }
-interface Incident { id: string; status: string }
 interface ScanJob { id: string; status: string }
 
 export function SectionCards() {
@@ -11,7 +10,6 @@ export function SectionCards() {
     hosts: 0,
     deviations: 0,
     allowed: 0,
-    incidents: 0,
     scans: 0,
   })
 
@@ -19,19 +17,16 @@ export function SectionCards() {
     Promise.all([
       api.get('/hosts'),
       api.get('/deviations'),
-      api.get('/incidents'),
       api.get('/scans'),
     ])
-      .then(([hostsRes, deviationsRes, incidentsRes, scansRes]) => {
+      .then(([hostsRes, deviationsRes, scansRes]) => {
         const hosts: Host[] = hostsRes.data || []
         const deviations: Deviation[] = deviationsRes.data || []
-        const incidents: Incident[] = incidentsRes.data || []
         const scans: ScanJob[] = scansRes.data || []
         setCounts({
           hosts: hosts.length,
           deviations: deviations.filter((d) => d.is_active !== false).length,
           allowed: deviations.filter((d) => d.is_active !== false).length,
-          incidents: incidents.length,
           scans: scans.length,
         })
       })
@@ -41,12 +36,11 @@ export function SectionCards() {
   const cards = [
     { label: 'Inventory Hosts', value: counts.hosts.toString(), trend: '', trendColor: 'text-green-500', sub: 'registered hosts', accent: 'rgba(250,204,21,0.06)' },
     { label: 'Deviations Found', value: counts.deviations.toString(), trend: '', trendColor: 'text-red-500', sub: 'active exceptions', accent: 'rgba(239,68,68,0.06)' },
-    { label: 'Open Incidents', value: counts.incidents.toString(), trend: '', trendColor: 'text-red-500', sub: 'from scans', accent: 'rgba(239,68,68,0.06)' },
     { label: 'Completed Scans', value: counts.scans.toString(), trend: '', trendColor: 'text-green-500', sub: 'total jobs', accent: 'rgba(34,197,94,0.06)' },
   ]
 
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-3 gap-4">
       {cards.map((card) => (
         <div
           key={card.label}
