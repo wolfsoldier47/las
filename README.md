@@ -1,7 +1,46 @@
+
 # Ulas Service
 
 Ulas is a Go backend service (Gin + GORM + PostgreSQL) with a Vite/React frontend that orchestrates Ansible Automation Platform (AAP) scans of `/etc/passwd` and `/etc/group`, compares results against registered master baselines and allowed deviations, and opens ServiceNow incidents for unauthorized deviations.
 
+
+```
+{
+      "ansible_job_id": "438578",
+      "hosts": [
+          {
+              "datacentre": "ffm",
+              "group_file": [
+
+                  {
+                      "utmp": "x:22:"
+                  }
+              ],
+              "machine_name": "test.zit.commerzbank.com",
+              "os_name": "RedHat",
+              "os_type": "Linux",
+              "os_version": "8.10",
+              "passwd_file": [
+                  {
+                      "root": "x:0:0:System Administrator of uvdcp06:/root:/bin/bash"
+                  }
+              ],
+              "stage": "prod"
+          }
+      ],
+
+  }
+
+{
+ "ansible_job_id": "438578",
+    "failed_hosts":[
+        123, 345 #if no failed hosts then send me an empty array
+    ]
+}
+
+  
+
+```
 ## Quick start (Podman)
 
 1. Copy environment variables:
