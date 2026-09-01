@@ -1,0 +1,30 @@
+# Binaries
+ulas-service
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go
+vendor/
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/.env*
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+!.env.example
+helper.txt

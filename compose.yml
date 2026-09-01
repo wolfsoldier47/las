@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  postgres:
+    build:
+      context: ./postgres
+      dockerfile: Containerfile
+    environment:
+      POSTGRES_USER: ulas
+      POSTGRES_PASSWORD: ulas
+      POSTGRES_DB: ulas
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ulas -d ulas"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgres://ulas:ulas@postgres:5432/ulas?sslmode=disable", "up"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: Containerfile
+    environment:
+      APP_ENV: development
+      PORT: 8080
+      DATABASE_URL: postgres://ulas:ulas@postgres:5432/ulas?sslmode=disable
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Containerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

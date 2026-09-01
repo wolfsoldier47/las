@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS service_now_tickets;
+DROP TABLE IF EXISTS incidents;
+DROP TABLE IF EXISTS host_file_changes;
+DROP TABLE IF EXISTS host_file_snapshots;
+DROP TABLE IF EXISTS scan_results;
+DROP TABLE IF EXISTS scan_jobs;
+DROP TABLE IF EXISTS allowed_deviations;
+DROP TABLE IF EXISTS master_baseline_versions;
+DROP TABLE IF EXISTS master_baselines;
+DROP TABLE IF EXISTS hosts;

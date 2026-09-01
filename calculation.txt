@@ -1,0 +1,779 @@
+resource allocation for running ulas-service as one container in Kubernetes. Need estimate CPU and RAM based on app characteristics: Go backend + Vite/React frontend served
+  via nginx, PostgreSQL separate. The container likely includes both backend and frontend? Project has Containerfile. Need inspect Containerfile to understand what runs in one container. Also
+  maybe compose. Need provide practical recommendations with rationale. Need ask/gather info: expected load (50k hosts callbacks), concurrency, baseline sizes, retention. Since not specified,
+  can give ranges and calculation method. Could also inspect build artifact sizes, binary size, Go runtime defaults. Frontend static files small (306KB JS). Backend Go binary maybe ~20-40MB.
+  Memory: Go backend with 50k hosts and snapshots could be significant; need estimate per host data. Baseline/passwd/group entries. CPU: AAP callbacks, comparison service. If one container ru
+  ns backend + nginx serving static, DB separate. Need estimate.
+
+
+
+• Containerfile is backend only. Frontend has its own Containerfile with nginx. User asks "run it as one container in my kubernetes". Could mean one container for backend? Or one pod with one
+  container. Need clarify but can give guidance for backend container. Since frontend is nginx static, can also mention if serving frontend from same container, add nginx sidecar? But one con
+  tainer means perhaps backend only, frontend served elsewhere or via same binary? The backend might serve static frontend? Let's check router to see if it serves frontend.
+
+
+
+• Backend doesn't serve static frontend. In K8s likely separate deployment for frontend or ingress to static. User says "one container" maybe they intend to run the whole app in one container
+  (backend+frontend+db?) Not realistic. Need ask clarification but can still answer.
+
+  Let's think about resource estimation for backend based on workload. Need produce a helpful answer with formulas.
+
+  Key resource drivers:
+
+  • Go binary baseline memory: ~30-50 MB idle (runtime, compiled binary, heap).
+  • Per concurrent HTTP request goroutine stack: ~2 KB-8 KB; with thousands of concurrent callbacks maybe tens of MB.
+  • Callback processing: each host payload creates snapshots (passwd/group entries). Need estimate data size per host.
+    • passwd entries: maybe ~20-100 entries, each key/value ~50 bytes -> 1-5 KB.
+    • group entries similar. So per host snapshot maybe 2-10 KB. For 50k hosts, if all loaded into memory at once (but pagination/callback streaming one at a time), peak maybe one host at a t
+      However GetScanDetailPaginated loads only page of results; each result includes incidents. Incidents could be many. For page 500 hosts, each with avg 5 incidents -> 2500 incidents. Inci
+      struct size maybe ~200 bytes -> 0.5 MB. Host details small. So detail endpoint memory small.
+    • Comparison service: loads baseline entries and deviations. Baseline entries could be large: global baselines per OS/file. If 10k entries per file, ~0.5 MB. Deviations maybe thousands. S
+      small.
+    • Database connection pool default maybe max open connections; each connection uses memory in Postgres, not app.
+  • CPU: callback processing involves JSON parsing, DB inserts (snapshots), comparison loops. For 50k hosts, if callbacks arrive in envelope of 50k, JSON unmarshal into memory could allocate
+    rge. The envelope hosts array of 50k * payload size. If each payload 2KB, envelope ~100 MB. Parsing uses more. So handling 50k hosts in one callback may require temporarily large memory.
+    e app currently processes envelope hosts sequentially (ProcessCallback per host) but loads entire envelope into memory in handler. That could be the peak. For 50k hosts, maybe 100-200 MB
+    ansient. Need account.
+  • Go GC: with high allocation, memory can spike 2-3x active heap.
+  • Frontend nginx static: minimal CPU/RAM; maybe 10-50 MB RAM, 50m CPU.
+
+  Need ask user for numbers: hosts per scan, callbacks per second, baseline size, retention, concurrent scans. But can provide ballpark.
+
+  Let's calculate: Base container:
+
+  • requests: CPU 100m, RAM 128Mi
+  • limits: CPU 500m, RAM 512Mi This is safe for light load.
+
+  For 50k hosts per scan:
+
+  • Callback envelope peak memory: 50k * ~3KB = 150MB plus JSON parsing overhead 2-3x -> 300-450MB. Plus base 50MB -> 400-500MB. So limit maybe 1Gi to be safe.
+  • CPU: processing 50k hosts sequentially with DB writes. If each host takes 5ms CPU + DB latency, total 250s CPU time but spread over actual time. If callback arrives as one request, it's s
+    gle goroutine, CPU usage is one core max. Time to process maybe minutes. CPU limit 1 core (1000m) is fine. But if many concurrent callbacks, need more. Requests: CPU 250m, limit 1000m.
+
+  But the comparison runs async? ProcessCallback runs comparison inline? Let's check.
+
+• Used Grep (ProcessCallback|compare)
+
+• ProcessCallbackEnvelope uses worker pool. Need inspect pool size and queue.
+
+• Used ReadFile (internal/service/scan_service.go)
+
+• Worker pool 10, jobs channel holds all hosts (memory). For 50k hosts, channel of 50k job structs each containing payload. Payload already in hosts slice; job struct copies payload (Callback
+  Payload includes slices maps, but maps/slices are references). So envelope hosts slice memory dominates.
+
+  Comparison service runs async? ProcessCallback calls comparison maybe async? Let's check.
+
+• Used ReadFile (internal/service/scan_service.go)
+
+• Comparison runs async per host, so while processing 50k callbacks, there can be up to 10 concurrent ProcessCallback goroutines, each spawning a comparison goroutine. Comparison loads baseli
+  ne/deviations and snapshots. Baselines may be cached per OS type; multiple hosts same OS share but each loads. That could cause DB load and memory. The baseline map and deviations per host.
+  If 10 concurrent, memory ~10 * baseline size. Baselines maybe a few MB. Fine.
+
+  CPU: with 10 workers plus 10 comparison goroutines plus GC, CPU usage can spike. Limit 1-2 cores.
+
+  Need also consider DB container resources separately. User asks "one container" maybe backend only. We'll answer for backend container, and mention DB separate.
+
+  Let's gather more: config values like DB pool?
+
+• Used Grep (MaxOpenConns|SetMaxOpen|db.Set|sql.DB)
+
+• Check config defaults for DB pool.
+
+• Used Grep (MaxOpenConns|MAX_OPEN|DB_MAX)
+
+• DB pool up to 100 open connections. Each connection in Postgres uses memory, but for app container, each goroutine waiting may use memory. 100 connections * ~ few MB in Postgres; app side s
+  mall. But container memory not impacted by DB connections much.
+
+  Need provide answer in same language (English). Use AskUserQuestion? The question is clear enough but lacks specifics. Could ask clarifying to give precise numbers. However we can give a fo
+  rmula and ranges. Since user likely wants a starting point, we can provide recommendations and mention variables.
+
+  Need maybe use tools to compute exact numbers? We can do rough calculations in text. No need.
+
+  Let's structure answer:
+
+  1. Clarify scope: one K8s container for ulas-service backend (Go binary), DB and frontend separate. If they literally want one container for everything, advise against (Postgres needs separ
+     pod/PVC).
+  2. Baseline resource profile:
+    • Binary/idle: ~30-60 MB RSS, <50m CPU.
+    • Go runtime will use ~10-25% extra.
+  3. Workload-specific estimates:
+    • Define variables: N hosts per scan, E avg entries per host, C callbacks/sec, R concurrent requests, S baseline size.
+    • Memory per host payload ~ 2-10 KB (JSON) + snapshot entries. For 50k hosts envelope: 100-500 MB transient.
+    • Worker pool 10 + async comparisons -> CPU up to 1-2 cores during ingestion.
+    • Detail page pagination: low memory per request.
+  4. Recommended starting requests/limits:
+    • Light (<1k hosts, few scans/day): requests 100m CPU, 128Mi RAM; limits 500m CPU, 512Mi RAM.
+    • Medium (10k hosts): requests 250m CPU, 256Mi RAM; limits 1 CPU, 1Gi RAM.
+    • Heavy (50k hosts per scan, frequent): requests 500m-1 CPU, 512Mi-1Gi RAM; limits 2 CPU, 2-4Gi RAM.
+    • If single envelope of 50k hosts, peak memory could approach 1Gi, so limit 2Gi.
+  5. HPA recommendations: target CPU 70%, memory 80%, min 2 replicas for HA.
+  6. Storage: not needed for backend (stateless). DB needs PVC.
+  7. Tuning knobs: worker pool, DB max open conns, GOGC, page size.
+  8. Monitoring: watch container_memory_working_set_bytes, cpu usage, DB connections, callback latency.
+
+  Also mention if they run frontend in same container via nginx, add ~64Mi RAM and 50m CPU.
+
+  Should I ask clarifying? The user says "when i run it as one container in my kubernetes". Could be ambiguous. I can provide conditional answer and ask for workload details to refine. Since
+  they likely appreciate ranges.
+
+  Need not use AskUserQuestion because answer can be given; but can include "If you tell me X I can refine." However instructions: ask for clarification if unclear. It is somewhat unclear, bu
+  t we can answer with assumptions. Maybe ask 1-2 quick questions to refine? We can ask expected hosts per scan and callback pattern. But maybe better to give ranges and ask if they want exac
+  t.
+
+  Given the user is asking resource allocation, a precise answer requires workload. I should ask clarifying questions with structured options. Use AskUserQuestion.
+
+• Used AskUserQuestion ({"questions": [{"question...rce needs multiply."}]}]})
+  User answered
+
+• Now give concrete recommendation for backend only, large scans 50k+ hosts.
+
+  Need compute more specifically.
+
+  Variables:
+
+  • Envelope of 50k hosts. Each CallbackPayload includes arrays passwd_file/group_file. Estimate average entries: passwd ~50 entries, group ~30 entries. Each entry map with key/value strings.
+    n Go, map overhead significant. But in JSON, maybe 2-5 KB. In memory after JSON unmarshal, maybe 5-15 KB per host. Let's estimate 10 KB average -> 500 MB for hosts slice. Handler keeps en
+    lope until processing done. ProcessCallbackEnvelope copies hosts into jobs channel; jobs channel holds references to payload structs (value copy includes slice headers referencing same ba
+    ing arrays), not double. So envelope memory ~500 MB during ingestion.
+  • Worker pool 10 processes concurrently. Each ProcessCallback resolves host, inserts snapshots. Snapshots stored in DB; host data may be held in goroutine stack/heap. Not huge. Comparison g
+    outine loads baseline and deviations. Baseline entries maybe up to a few hundred -> small. So additional per-worker memory maybe 10-50 MB.
+  • Go runtime + binary ~50-80 MB.
+  • GC overhead: peak heap may be 2x active? During ingestion active heap ~500 MB, GC target could allow up to 100% overhead -> 1 GB. So RSS maybe ~600-900 MB. Set limit 1.5-2 Gi to be safe.
+    quests 512Mi-1Gi.
+  • CPU: 10 workers + 10 comparisons + JSON decode. During ingestion CPU can saturate 1 core, maybe 1.5 cores. Limit 2 cores. Requests 500m-1 core.
+  • During idle between scans: minimal. Requests should cover baseline. With HPA, can scale to 1 replica when idle? But if single scan triggers, pod must handle. HPA scale based on CPU/memory
+    ay not help during single callback. Better ensure single pod limit sufficient.
+
+  Also DB is separate; backend container does not include DB memory.
+
+  For detail page with 50k hosts, server paginates. Each page at most 500 hosts. Memory per request small (< few MB). Detail requests won't spike.
+
+  Recommend:
+
+  • CPU request: 1000m (1 core), limit: 2000m (2 cores). Reason: ingestion uses up to ~1.5 cores; provide headroom.
+  • RAM request: 1Gi, limit: 2Gi. Reason: envelope of 50k hosts ~500 MB + runtime + GC headroom.
+  • Replicas: min 2 for HA if active, but scan ingestion not horizontally sharded (each callback to one pod; if multiple pods, AAP would need target one or load balancer?). Actually callback
+    L could point to service; any pod can process. If multiple pods, each envelope processed by one pod. So scaling helps availability and concurrent requests, not single envelope. Use HPA mi
+    2 max 5 target CPU 70%, memory 80%. But if cost, min 1.
+  • Liveness/readiness probes: /api/health (maybe exists). Check.
+
+• Used Grep (health|Health)
+
+• Use /api/health for probes.
+
+  Also mention GOGC tuning: default 100; for large envelope, can set GOGC=50 to GC more aggressively and limit peak memory, at cost of CPU. Or set GOMEMLIMIT to e.g. 1.5Gi to guide GC.
+
+  Need maybe provide example K8s resource snippet.
+
+  Need also mention DB side resources separately (since backend only). Postgres for 50k hosts with snapshots and incidents: storage maybe 1-5 GB; RAM 1-2 Gi; CPU 500m-1. But user asked one co
+  ntainer; still relevant.
+
+  Now produce final answer.
+
+• For a backend-only container handling 50,000+ hosts per scan, here is a practical starting point.
+
+  Recommended K8s resources
+  ─────────────────────────
+
+  resources:
+    requests:
+      cpu: "1000m"      # 1 vCPU
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"      # 2 vCPU
+      memory: "2Gi"
+
+  Why these numbers?
+  ──────────────────
+
+  ┌──────────────────────────────────────────┬──────────────────────────────────────────────────────┐
+  │ Factor                                   │ Estimate                                             │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+  │ Go binary + runtime idle                 │ ~50–80 MB                                            │
+  │ One 50k-host callback envelope in memory │ ~300–600 MB (depends on passwd_file/group_file size) │
+  │ 10 worker goroutines + async comparisons │ ~50–150 MB                                           │
+  │ GC headroom during heavy ingestion       │ ~300–500 MB                                          │
+  │ Peak working set                         │ ~0.8–1.3 GB                                          │
+  │ CPU during envelope ingestion            │ 1–1.5 cores (JSON parsing + DB writes + comparisons) │
+  └──────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+
+  So 1 Gi request / 2 Gi limit gives enough headroom for a 50k-host burst without OOMKilling, and 2 vCPU limit covers the ingestion spike.
+
+  Probes
+  ──────
+
+  Use the existing health endpoint:
+
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 8080
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+  Scaling
+  ───────
+
+  A single envelope is processed by one pod (the handler keeps the full hosts array in memory and fans out 10 workers), so adding replicas does not speed up one callback. It does help with:
+
+  • Concurrent UI/API requests
+  • High availability
+  • Multiple smaller callbacks arriving at the same time
+  Suggested HPA:
+
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        targetAverageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        targetAverageUtilization: 80
+
+  If you want to run a single pod to save cost, keep the 2 Gi limit — that is the important part for 50k-host scans.
+
+  Tuning knobs to keep memory under control
+  ─────────────────────────────────────────
+
+  You can pass these via env vars in the Deployment:
+
+  env:
+    - name: GOGC
+      value: "50"          # more aggressive GC during ingestion
+    - name: GOMEMLIMIT
+      value: "1500MiB"     # soft memory target for the Go runtime
+
+  GOMEMLIMIT is especially useful: it tells Go to pace GC so RSS stays closer to 1.5 Gi instead of spiking toward the 2 Gi limit.
+
+  If you also add the frontend to the same container
+  ──────────────────────────────────────────────────
+
+  Add roughly:
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  But the recommended setup is separate frontend + backend pods.
+
+  What to watch in production
+  ───────────────────────────
+
+  • container_memory_working_set_bytes vs limit
+  • CPU spikes during callback ingestion
+  • DB connection pool usage (MAXOPENCONNS defaults to 100)
+  • Callback response time from AAP (the envelope is accepted quickly, but processing continues in the background)
+  Bottom line
+  ───────────
+
+  Start with:
+
+  requests: cpu 1000m, memory 1Gi
+  limits:   cpu 2000m, memory 2Gi
+
+  Monitor after a few real 50k-host scans. If peak RSS stays well under 1.5 Gi, you can lower the limit to 1.5 Gi. If you see OOMs, raise it to 3 Gi or reduce per-host payload size first.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  one main callback:
+  User asks about resource allocation for running ulas-service as one container in Kubernetes. Need estimate CPU and RAM based on app characteristics: Go backend + Vite/React frontend served
+  via nginx, PostgreSQL separate. The container likely includes both backend and frontend? Project has Containerfile. Need inspect Containerfile to understand what runs in one container. Also
+  maybe compose. Need provide practical recommendations with rationale. Need ask/gather info: expected load (50k hosts callbacks), concurrency, baseline sizes, retention. Since not specified,
+  can give ranges and calculation method. Could also inspect build artifact sizes, binary size, Go runtime defaults. Frontend static files small (306KB JS). Backend Go binary maybe ~20-40MB.
+  Memory: Go backend with 50k hosts and snapshots could be significant; need estimate per host data. Baseline/passwd/group entries. CPU: AAP callbacks, comparison service. If one container ru
+  ns backend + nginx serving static, DB separate. Need estimate.
+
+  Let's inspect Containerfile and compose.yml to know architecture.
+
+• Used ReadFile (Containerfile)
+
+• Used ReadFile (compose.yml)
+
+• Containerfile is backend only. Frontend has its own Containerfile with nginx. User asks "run it as one container in my kubernetes". Could mean one container for backend? Or one pod with one
+  container. Need clarify but can give guidance for backend container. Since frontend is nginx static, can also mention if serving frontend from same container, add nginx sidecar? But one con
+  tainer means perhaps backend only, frontend served elsewhere or via same binary? The backend might serve static frontend? Let's check router to see if it serves frontend.
+
+• Used Grep (Static|dist|frontend)
+
+• Backend doesn't serve static frontend. In K8s likely separate deployment for frontend or ingress to static. User says "one container" maybe they intend to run the whole app in one container
+  (backend+frontend+db?) Not realistic. Need ask clarification but can still answer.
+
+  Let's think about resource estimation for backend based on workload. Need produce a helpful answer with formulas.
+
+  Key resource drivers:
+
+  • Go binary baseline memory: ~30-50 MB idle (runtime, compiled binary, heap).
+  • Per concurrent HTTP request goroutine stack: ~2 KB-8 KB; with thousands of concurrent callbacks maybe tens of MB.
+  • Callback processing: each host payload creates snapshots (passwd/group entries). Need estimate data size per host.
+    • passwd entries: maybe ~20-100 entries, each key/value ~50 bytes -> 1-5 KB.
+    • group entries similar. So per host snapshot maybe 2-10 KB. For 50k hosts, if all loaded into memory at once (but pagination/callback streaming one at a time), peak maybe one host at a t
+      However GetScanDetailPaginated loads only page of results; each result includes incidents. Incidents could be many. For page 500 hosts, each with avg 5 incidents -> 2500 incidents. Inci
+      struct size maybe ~200 bytes -> 0.5 MB. Host details small. So detail endpoint memory small.
+    • Comparison service: loads baseline entries and deviations. Baseline entries could be large: global baselines per OS/file. If 10k entries per file, ~0.5 MB. Deviations maybe thousands. S
+      small.
+    • Database connection pool default maybe max open connections; each connection uses memory in Postgres, not app.
+  • CPU: callback processing involves JSON parsing, DB inserts (snapshots), comparison loops. For 50k hosts, if callbacks arrive in envelope of 50k, JSON unmarshal into memory could allocate
+    rge. The envelope hosts array of 50k * payload size. If each payload 2KB, envelope ~100 MB. Parsing uses more. So handling 50k hosts in one callback may require temporarily large memory.
+    e app currently processes envelope hosts sequentially (ProcessCallback per host) but loads entire envelope into memory in handler. That could be the peak. For 50k hosts, maybe 100-200 MB
+    ansient. Need account.
+  • Go GC: with high allocation, memory can spike 2-3x active heap.
+  • Frontend nginx static: minimal CPU/RAM; maybe 10-50 MB RAM, 50m CPU.
+
+  Need ask user for numbers: hosts per scan, callbacks per second, baseline size, retention, concurrent scans. But can provide ballpark.
+
+  Let's calculate: Base container:
+
+  • requests: CPU 100m, RAM 128Mi
+  • limits: CPU 500m, RAM 512Mi This is safe for light load.
+
+  For 50k hosts per scan:
+
+  • Callback envelope peak memory: 50k * ~3KB = 150MB plus JSON parsing overhead 2-3x -> 300-450MB. Plus base 50MB -> 400-500MB. So limit maybe 1Gi to be safe.
+  • CPU: processing 50k hosts sequentially with DB writes. If each host takes 5ms CPU + DB latency, total 250s CPU time but spread over actual time. If callback arrives as one request, it's s
+    gle goroutine, CPU usage is one core max. Time to process maybe minutes. CPU limit 1 core (1000m) is fine. But if many concurrent callbacks, need more. Requests: CPU 250m, limit 1000m.
+
+  But the comparison runs async? ProcessCallback runs comparison inline? Let's check.
+
+• Used Grep (ProcessCallback|compare)
+
+• ProcessCallbackEnvelope uses worker pool. Need inspect pool size and queue.
+
+• Used ReadFile (internal/service/scan_service.go)
+
+• Worker pool 10, jobs channel holds all hosts (memory). For 50k hosts, channel of 50k job structs each containing payload. Payload already in hosts slice; job struct copies payload (Callback
+  Payload includes slices maps, but maps/slices are references). So envelope hosts slice memory dominates.
+
+  Comparison service runs async? ProcessCallback calls comparison maybe async? Let's check.
+
+• Used ReadFile (internal/service/scan_service.go)
+
+• Comparison runs async per host, so while processing 50k callbacks, there can be up to 10 concurrent ProcessCallback goroutines, each spawning a comparison goroutine. Comparison loads baseli
+  ne/deviations and snapshots. Baselines may be cached per OS type; multiple hosts same OS share but each loads. That could cause DB load and memory. The baseline map and deviations per host.
+  If 10 concurrent, memory ~10 * baseline size. Baselines maybe a few MB. Fine.
+
+  CPU: with 10 workers plus 10 comparison goroutines plus GC, CPU usage can spike. Limit 1-2 cores.
+
+  Need also consider DB container resources separately. User asks "one container" maybe backend only. We'll answer for backend container, and mention DB separate.
+
+  Let's gather more: config values like DB pool?
+
+• Used Grep (MaxOpenConns|SetMaxOpen|db.Set|sql.DB)
+
+• Check config defaults for DB pool.
+
+• Used Grep (MaxOpenConns|MAX_OPEN|DB_MAX)
+
+• DB pool up to 100 open connections. Each connection in Postgres uses memory, but for app container, each goroutine waiting may use memory. 100 connections * ~ few MB in Postgres; app side s
+  mall. But container memory not impacted by DB connections much.
+
+  Need provide answer in same language (English). Use AskUserQuestion? The question is clear enough but lacks specifics. Could ask clarifying to give precise numbers. However we can give a fo
+  rmula and ranges. Since user likely wants a starting point, we can provide recommendations and mention variables.
+
+  Need maybe use tools to compute exact numbers? We can do rough calculations in text. No need.
+
+  Let's structure answer:
+
+  1. Clarify scope: one K8s container for ulas-service backend (Go binary), DB and frontend separate. If they literally want one container for everything, advise against (Postgres needs separ
+     pod/PVC).
+  2. Baseline resource profile:
+    • Binary/idle: ~30-60 MB RSS, <50m CPU.
+    • Go runtime will use ~10-25% extra.
+  3. Workload-specific estimates:
+    • Define variables: N hosts per scan, E avg entries per host, C callbacks/sec, R concurrent requests, S baseline size.
+    • Memory per host payload ~ 2-10 KB (JSON) + snapshot entries. For 50k hosts envelope: 100-500 MB transient.
+    • Worker pool 10 + async comparisons -> CPU up to 1-2 cores during ingestion.
+    • Detail page pagination: low memory per request.
+  4. Recommended starting requests/limits:
+    • Light (<1k hosts, few scans/day): requests 100m CPU, 128Mi RAM; limits 500m CPU, 512Mi RAM.
+    • Medium (10k hosts): requests 250m CPU, 256Mi RAM; limits 1 CPU, 1Gi RAM.
+    • Heavy (50k hosts per scan, frequent): requests 500m-1 CPU, 512Mi-1Gi RAM; limits 2 CPU, 2-4Gi RAM.
+    • If single envelope of 50k hosts, peak memory could approach 1Gi, so limit 2Gi.
+  5. HPA recommendations: target CPU 70%, memory 80%, min 2 replicas for HA.
+  6. Storage: not needed for backend (stateless). DB needs PVC.
+  7. Tuning knobs: worker pool, DB max open conns, GOGC, page size.
+  8. Monitoring: watch container_memory_working_set_bytes, cpu usage, DB connections, callback latency.
+
+  Also mention if they run frontend in same container via nginx, add ~64Mi RAM and 50m CPU.
+
+  Should I ask clarifying? The user says "when i run it as one container in my kubernetes". Could be ambiguous. I can provide conditional answer and ask for workload details to refine. Since
+  they likely appreciate ranges.
+
+  Need not use AskUserQuestion because answer can be given; but can include "If you tell me X I can refine." However instructions: ask for clarification if unclear. It is somewhat unclear, bu
+  t we can answer with assumptions. Maybe ask 1-2 quick questions to refine? We can ask expected hosts per scan and callback pattern. But maybe better to give ranges and ask if they want exac
+  t.
+
+  Given the user is asking resource allocation, a precise answer requires workload. I should ask clarifying questions with structured options. Use AskUserQuestion.
+
+• Used AskUserQuestion ({"questions": [{"question...rce needs multiply."}]}]})
+  User answered
+
+• Now give concrete recommendation for backend only, large scans 50k+ hosts.
+
+  Need compute more specifically.
+
+  Variables:
+
+  • Envelope of 50k hosts. Each CallbackPayload includes arrays passwd_file/group_file. Estimate average entries: passwd ~50 entries, group ~30 entries. Each entry map with key/value strings.
+    n Go, map overhead significant. But in JSON, maybe 2-5 KB. In memory after JSON unmarshal, maybe 5-15 KB per host. Let's estimate 10 KB average -> 500 MB for hosts slice. Handler keeps en
+    lope until processing done. ProcessCallbackEnvelope copies hosts into jobs channel; jobs channel holds references to payload structs (value copy includes slice headers referencing same ba
+    ing arrays), not double. So envelope memory ~500 MB during ingestion.
+  • Worker pool 10 processes concurrently. Each ProcessCallback resolves host, inserts snapshots. Snapshots stored in DB; host data may be held in goroutine stack/heap. Not huge. Comparison g
+    outine loads baseline and deviations. Baseline entries maybe up to a few hundred -> small. So additional per-worker memory maybe 10-50 MB.
+  • Go runtime + binary ~50-80 MB.
+  • GC overhead: peak heap may be 2x active? During ingestion active heap ~500 MB, GC target could allow up to 100% overhead -> 1 GB. So RSS maybe ~600-900 MB. Set limit 1.5-2 Gi to be safe.
+    quests 512Mi-1Gi.
+  • CPU: 10 workers + 10 comparisons + JSON decode. During ingestion CPU can saturate 1 core, maybe 1.5 cores. Limit 2 cores. Requests 500m-1 core.
+  • During idle between scans: minimal. Requests should cover baseline. With HPA, can scale to 1 replica when idle? But if single scan triggers, pod must handle. HPA scale based on CPU/memory
+    ay not help during single callback. Better ensure single pod limit sufficient.
+
+  Also DB is separate; backend container does not include DB memory.
+
+  For detail page with 50k hosts, server paginates. Each page at most 500 hosts. Memory per request small (< few MB). Detail requests won't spike.
+
+  Recommend:
+
+  • CPU request: 1000m (1 core), limit: 2000m (2 cores). Reason: ingestion uses up to ~1.5 cores; provide headroom.
+  • RAM request: 1Gi, limit: 2Gi. Reason: envelope of 50k hosts ~500 MB + runtime + GC headroom.
+  • Replicas: min 2 for HA if active, but scan ingestion not horizontally sharded (each callback to one pod; if multiple pods, AAP would need target one or load balancer?). Actually callback
+    L could point to service; any pod can process. If multiple pods, each envelope processed by one pod. So scaling helps availability and concurrent requests, not single envelope. Use HPA mi
+    2 max 5 target CPU 70%, memory 80%. But if cost, min 1.
+  • Liveness/readiness probes: /api/health (maybe exists). Check.
+
+• Used Grep (health|Health)
+
+• Use /api/health for probes.
+
+  Also mention GOGC tuning: default 100; for large envelope, can set GOGC=50 to GC more aggressively and limit peak memory, at cost of CPU. Or set GOMEMLIMIT to e.g. 1.5Gi to guide GC.
+
+  Need maybe provide example K8s resource snippet.
+
+  Need also mention DB side resources separately (since backend only). Postgres for 50k hosts with snapshots and incidents: storage maybe 1-5 GB; RAM 1-2 Gi; CPU 500m-1. But user asked one co
+  ntainer; still relevant.
+
+  Now produce final answer.
+
+• For a backend-only container handling 50,000+ hosts per scan, here is a practical starting point.
+
+  Recommended K8s resources
+  ─────────────────────────
+
+  resources:
+    requests:
+      cpu: "1000m"      # 1 vCPU
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"      # 2 vCPU
+      memory: "2Gi"
+
+  Why these numbers?
+  ──────────────────
+
+  ┌──────────────────────────────────────────┬──────────────────────────────────────────────────────┐
+  │ Factor                                   │ Estimate                                             │
+  ├──────────────────────────────────────────┼──────────────────────────────────────────────────────┤
+  │ Go binary + runtime idle                 │ ~50–80 MB                                            │
+  │ One 50k-host callback envelope in memory │ ~300–600 MB (depends on passwd_file/group_file size) │
+  │ 10 worker goroutines + async comparisons │ ~50–150 MB                                           │
+  │ GC headroom during heavy ingestion       │ ~300–500 MB                                          │
+  │ Peak working set                         │ ~0.8–1.3 GB                                          │
+  │ CPU during envelope ingestion            │ 1–1.5 cores (JSON parsing + DB writes + comparisons) │
+  └──────────────────────────────────────────┴──────────────────────────────────────────────────────┘
+
+  So 1 Gi request / 2 Gi limit gives enough headroom for a 50k-host burst without OOMKilling, and 2 vCPU limit covers the ingestion spike.
+
+  Probes
+  ──────
+
+  Use the existing health endpoint:
+
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: 8080
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+  Scaling
+  ───────
+
+  A single envelope is processed by one pod (the handler keeps the full hosts array in memory and fans out 10 workers), so adding replicas does not speed up one callback. It does help with:
+
+  • Concurrent UI/API requests
+  • High availability
+  • Multiple smaller callbacks arriving at the same time
+  Suggested HPA:
+
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        targetAverageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        targetAverageUtilization: 80
+
+  If you want to run a single pod to save cost, keep the 2 Gi limit — that is the important part for 50k-host scans.
+
+  Tuning knobs to keep memory under control
+  ─────────────────────────────────────────
+
+  You can pass these via env vars in the Deployment:
+
+  env:
+    - name: GOGC
+      value: "50"          # more aggressive GC during ingestion
+    - name: GOMEMLIMIT
+      value: "1500MiB"     # soft memory target for the Go runtime
+
+  GOMEMLIMIT is especially useful: it tells Go to pace GC so RSS stays closer to 1.5 Gi instead of spiking toward the 2 Gi limit.
+
+  If you also add the frontend to the same container
+  ──────────────────────────────────────────────────
+
+  Add roughly:
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  But the recommended setup is separate frontend + backend pods.
+
+  What to watch in production
+  ───────────────────────────
+
+  • container_memory_working_set_bytes vs limit
+  • CPU spikes during callback ingestion
+  • DB connection pool usage (MAXOPENCONNS defaults to 100)
+  • Callback response time from AAP (the envelope is accepted quickly, but processing continues in the background)
+  Bottom line
+  ───────────
+
+  Start with:
+
+  requests: cpu 1000m, memory 1Gi
+  limits:   cpu 2000m, memory 2Gi
+
+  Monitor after a few real 50k-host scans. If peak RSS stays well under 1.5 Gi, you can lower the limit to 1.5 Gi. If you see OOMs, raise it to 3 Gi or reduce per-host payload size first.
+
+
+Tip: press Ctrl-D or send 'exit' to quit
+✨ so while processing 50k callbacks its just 1 callback receving from the ansible side which will have 50k hosts
+
+• User clarifies: 50k hosts come in a single callback/envelope from Ansible. We need refine recommendation given that. Our earlier estimate assumed single envelope; so same. But we can be mor
+  e precise: single HTTP request, handler parses JSON into envelope, then ProcessCallbackEnvelope spawns 10 workers. The entire envelope stays in memory for duration. Need calculate memory mo
+  re precisely and CPU/time.
+
+  We should explain that single callback means memory spike is transient but large; CPU usage is limited by worker pool and DB; one container with 2 cores and 2Gi should handle but ingestion
+  will take time. Maybe provide estimate of ingestion time and how to optimize (increase worker pool, DB pool, etc). Also mention that horizontal scaling won't help single envelope, only mult
+  iple callbacks. Need maybe suggest streaming/chunking if possible, but current code loads envelope into memory.
+
+  Let's calculate:
+
+  • Envelope JSON size: depends on entries. For 50k hosts, if each host payload JSON ~2 KB (minimal) -> 100 MB. If ~10 KB -> 500 MB. In Go memory after unmarshalling, maybe 2-4x JSON size due
+    o maps/slices overhead. So 200 MB - 2 GB. That's significant. If baseline/expected entries are large, even more.
+  • ProcessCallbackEnvelope uses jobs := make(chan job, len(hosts)) which buffers all jobs. Each job struct copies CallbackPayload (includes slice headers pointing to same arrays). Channel bu
+    er memory: 50k * size of struct (roughly a few pointers) ~ 1-2 MB. Not significant. The hosts slice dominates.
+  • 10 workers process sequentially-ish. Each ProcessCallback does DB operations. Bottleneck likely DB write latency. If each host takes 50ms (DB roundtrips: scan job select, host upsert, sca
+    result insert, snapshot inserts, scan job update), 50k hosts / 10 workers = 5k tasks per worker * 50ms = 250s (~4 minutes) of wall time. If DB faster (10ms), ~50s. CPU usage moderate beca
+    e waiting on DB. So 2 cores plenty; maybe 1 core enough. But JSON parsing spike uses CPU.
+  • Async comparison per host also runs; it queries baselines/deviations/snapshots and creates incidents. This adds DB load and CPU after host callback returns. Up to 10 comparison goroutines
+    oncurrently. Could double DB load.
+  • Memory during processing: envelope remains in memory until all workers done because channel/job references payloads (the maps/slices in payloads). After processing, GC can free. So peak l
+    ts minutes.
+  • If failed_hosts list also 50k? maybe small.
+
+  Recommendation remains ~2Gi limit. If envelope memory after unmarshal >1Gi, could OOM. Suggest user estimate JSON size: wc -c of sample callback * 50k. Go heap after unmarshal ~2-4x JSON. T
+  hen set limit to at least 2x that. Or set GOMEMLIMIT.
+
+  Could suggest improvements to reduce memory: process envelope streaming (not implemented), batch insert, increase worker pool, tune DB pool, use json.Decoder streaming. But question is reso
+  urce allocation.
+
+  Need answer concisely but thorough. Maybe include a quick formula:
+
+  required_limit_mem ≈ 200MB + (N_hosts × avg_payload_memory × 3)
+
+  Where avg_payload_memory after unmarshalling ≈ 5-15 KB. For 50k => 750MB-2.25GB. Add runtime. So limit 2-4Gi. Requests 1-2Gi.
+
+  CPU: limit 1-2 vCPU. Because single envelope, extra cores won't speed beyond DB/lock concurrency. But 2 vCPU covers spikes. Requests 500m-1.
+
+  Also important: since single callback holds memory, don't set HPA memory target too aggressive; scaling won't help and may cause memory pressure if two pods each get large callbacks. But if
+  only one large callback at a time, one pod.
+
+  Need mention DB resources: Postgres needs 2-4Gi RAM and 1 vCPU for 50k inserts, plus storage IOPS. Since DB separate.
+
+  Let's craft final.
+
+• Exactly — that changes the shape of the spike but not the peak size. You get one big HTTP request that contains all 50,000 hosts, and the backend then fans that out to 10 workers.
+
+  Here is the more precise sizing for that pattern.
+
+  Memory: the envelope dominates
+  ──────────────────────────────
+
+  The whole JSON body is unmarshalled into memory once and stays there until the last worker finishes.
+
+  Quick formula:
+
+  peak RSS ≈ 200 MB (Go runtime + binary)
+              + (N_hosts × avg_payload_size × 2–4x overhead)
+
+  ┌──────────────────┬────────────────┬────────────────┬─────────────┐
+  │ Avg host payload │ JSON body size │ In-memory heap │ Safe limit  │
+  ├──────────────────┼────────────────┼────────────────┼─────────────┤
+  │ 2 KB             │ ~100 MB        │ ~200–400 MB    │ 512 MB–1 Gi │
+  │ 5 KB             │ ~250 MB        │ ~500 MB–1 Gi   │ 1.5–2 Gi    │
+  │ 10 KB            │ ~500 MB        │ ~1–2 Gi        │ 3–4 Gi      │
+  └──────────────────┴────────────────┴────────────────┴─────────────┘
+
+  The 2–4x overhead comes from Go maps/slices for passwd_file/group_file and the CallbackPayload structs.
+
+  For 50k hosts, my recommendation is:
+  ────────────────────────────────────
+
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
+
+  If your average host payload is larger than ~5 KB, raise the memory limit to 3–4 Gi.
+
+  CPU: usually not the bottleneck
+  ───────────────────────────────
+
+  With one callback:
+
+  1. One goroutine parses the giant JSON → short CPU spike.
+  2. 10 workers then do mostly DB I/O (insert hosts, scan results, snapshots).
+  3. 10 async comparison goroutines run afterwards.
+  So the workload is DB-bound, not CPU-bound. Two cores are enough to keep the workers and GC busy. More replicas/cores will not make a single 50k-host callback finish faster because the 10-w
+  orker pool is fixed.
+
+  Rough ingestion time estimate
+  ─────────────────────────────
+
+  Assuming each host needs ~20–50 ms of DB work:
+
+  50,000 hosts ÷ 10 workers × 30 ms ≈ 150 seconds
+
+  So a 50k-host scan will take roughly 2–4 minutes to fully ingest, depending on DB latency.
+
+  Important tuning for this pattern
+  ─────────────────────────────────
+
+  In your Deployment, set:
+
+  env:
+    - name: GOMEMLIMIT
+      value: "1500MiB"   # keep GC honest, well below the 2 Gi limit
+    - name: GOGC
+      value: "50"        # trade a bit more CPU for lower peak RSS
+
+  Also make sure your Postgres pod can keep up. For 50k hosts the backend will do hundreds of thousands of small inserts in a few minutes. Recommended for the DB pod:
+
+  resources:
+    requests:
+      cpu: "1000m"
+      memory: "2Gi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  And use fast storage (SSD-backed PVC) for PostgreSQL.
+
+  Horizontal scaling note
+  ───────────────────────
+
+  Because the 50k hosts arrive in one callback, Kubernetes HPA will not help that single callback. It only helps if:
+
+  • Multiple scans run at the same time
+  • Many users hit the UI/detail pages while ingestion is running
+  So you can start with 1 replica, or 2 replicas for HA, but don’t expect scaling to speed up one giant envelope.
+
+  Quick check you can do now
+  ──────────────────────────
+
+  Capture a realistic callback payload from Ansible and check its size:
+
+  # one host payload
+  wc -c one_host_callback.json
+
+  # estimate 50k
+  expr $(wc -c < one_host_callback.json) \* 50000
+
+  If the 50k estimate is above ~300 MB JSON, you should plan for 3–4 Gi memory limit.
+
+  If you can share the average size of one host callback (or paste a redacted example), I can give you an exact memory number.
+
+
+

@@ -1,0 +1,9 @@
+FROM postgres:16-alpine
+
+ENV POSTGRES_USER=ulas \
+    POSTGRES_PASSWORD=ulas \
+    POSTGRES_DB=ulas
+
+EXPOSE 5432
+
+VOLUME ["/var/lib/postgresql/data"]

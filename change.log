@@ -1,0 +1,10 @@
+• ProcessCallbackEnvelope now just enqueues hosts and returns immediately — no DB lookup in the HTTP path.
+  • A shared pool of 20 callback workers drains the queue, so the DB never gets hit by more than 20 concurrent callback goroutines at once.
+  • The queue buffer is 100k, so even a 20k-host envelope lands instantly without blocking the handler.
+  • Failed hosts are recorded in a background goroutine as well.
+  What this means for Ansible:
+  • Each POST to /api/callbacks/scan should now return 202 Accepted in milliseconds, even if the DB is currently busy.
+  • Ansible can loop through all 10 hosts (or 10,000) as fast as it wants without urlopen timed out.
+  What it does not change:
+  • The DB still ingests at roughly the same rate (~100 hosts/sec in your container). A 10-host scan finishes quickly; a 20k-host scan still takes a few minutes to fully persist, but Ansible
+    n’t notice.
