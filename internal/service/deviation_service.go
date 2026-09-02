@@ -68,7 +68,7 @@ func NewDefaultDeviationService(repo repository.DeviationRepository) *DefaultDev
 // and is not required to exist in the host inventory. The entry line is parsed
 // into key and value in the backend (e.g. /etc/passwd or /etc/group line).
 func (s *DefaultDeviationService) Create(ctx context.Context, req CreateDeviationRequest) (*models.AllowedDeviation, error) {
-	entryKey, entryValue, err := parseEntryLine(req.EntryLine)
+	entryKey, entryValue, err := parseEntryLine(req.FileType, req.EntryLine)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (s *DefaultDeviationService) Update(ctx context.Context, id uuid.UUID, req 
 		return nil, fmt.Errorf("get deviation: %w", err)
 	}
 
-	entryKey, entryValue, err := parseEntryLine(req.EntryLine)
+	entryKey, entryValue, err := parseEntryLine(req.FileType, req.EntryLine)
 	if err != nil {
 		return nil, err
 	}
@@ -186,8 +186,10 @@ func (s *DefaultDeviationService) Delete(ctx context.Context, id uuid.UUID) erro
 
 // parseEntryLine splits a passwd/group style line into key and value.
 // key is the first field; value is everything after the first colon.
+// For group entries, the value is normalized (member list sorted, trailing
+// colon stripped) so it matches the scanned snapshot format.
 // A missing or empty value is stored as nil (wildcard).
-func parseEntryLine(line string) (string, *string, error) {
+func parseEntryLine(fileType models.FileType, line string) (string, *string, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return "", nil, fmt.Errorf("entry line is required")
@@ -207,5 +209,10 @@ func parseEntryLine(line string) (string, *string, error) {
 	if value == "" {
 		return key, nil, nil
 	}
+
+	if fileType == models.FileTypeGroup {
+		value = normalizeGroupSnapshotValue(value)
+	}
+
 	return key, &value, nil
 }
