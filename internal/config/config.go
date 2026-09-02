@@ -42,6 +42,13 @@ type AppConfig struct {
 	AAPPassword           string
 	AAPJobTemplateName    string
 
+	// Solaris AAP instance (optional).
+	AAPSolarisURL           string
+	AAPRESTVERSIONSolaris   string
+	AAPUsernameSolaris      string
+	AAPPasswordSolaris      string
+	AAPJobTemplateNameSolaris string
+
 	SNOWBaseURL  string
 	SNOWUsername string
 	SNOWPassword string
@@ -104,6 +111,13 @@ func Load() {
 			AAPUsername:           getEnv("AAP_USERNAME", "admin"),
 			AAPPassword:           getEnv("AAP_PASSWORD", "VunPlhzsILGqI96hmG9ET6L2OmfdhGo2"),
 			AAPJobTemplateName:    getEnv("AAP_JOB_TEMPLATE_NAME", "ulas"),
+
+			// Solaris AAP instance.
+			AAPSolarisURL:             getEnv("AAPSOLARIS_URL", ""),
+			AAPRESTVERSIONSolaris:     getEnv("AAPRESTVERSION_SOLARIS", "/api/controller/v2/"),
+			AAPUsernameSolaris:        getEnv("AAPUSERNAME_SOLARIS", ""),
+			AAPPasswordSolaris:        getEnv("AAPPASSWORD_SOLARIS", ""),
+			AAPJobTemplateNameSolaris: getEnv("AAPJOBTEMPLATENAME_SOLARIS", ""),
 
 			SNOWBaseURL:  getEnv("SNOW_BASE_URL", ""),
 			SNOWUsername: getEnv("SNOW_USERNAME", ""),

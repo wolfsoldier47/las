@@ -59,6 +59,7 @@ export default function ScanHistoryPage() {
   const [error, setError] = useState('')
   const [form, setForm] = useState({
     limit: '',
+    os_type: 'linux',
   })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -89,10 +90,10 @@ export default function ScanHistoryPage() {
       .catch((err) => setError(err.message))
   }
 
-  const fetchAAPHealth = () => {
+  const fetchAAPHealth = (osType = form.os_type) => {
     setAapLoading(true)
     api
-      .get('/health/aap')
+      .get(`/health/aap?os_type=${osType}`)
       .then((res) => setAapHealth(res.data))
       .catch(() => setAapHealth({ status: 'degraded', aap_status: 'unreachable' }))
       .finally(() => setAapLoading(false))
@@ -102,9 +103,9 @@ export default function ScanHistoryPage() {
     fetchScans()
     fetchBaselines()
     fetchAAPHealth()
-    const interval = setInterval(fetchAAPHealth, 30000)
+    const interval = setInterval(() => fetchAAPHealth(form.os_type), 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [form.os_type])
 
   useEffect(() => {
     fetchScans(page, pageSize)
@@ -121,7 +122,7 @@ export default function ScanHistoryPage() {
     api
       .post('/scans', form)
       .then(() => {
-        setForm({ limit: '' })
+        setForm((prev) => ({ ...prev, limit: '' }))
         setPage(1)
         setOnlyDeviations(false)
         setSearch('')
@@ -155,6 +156,21 @@ export default function ScanHistoryPage() {
               placeholder="e.g., host1,host2 or leave empty for all"
               disabled={!aapLive}
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Target OS</label>
+            <select
+              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              value={form.os_type}
+              onChange={(e) => {
+                const osType = e.target.value
+                setForm({ ...form, os_type: osType })
+                fetchAAPHealth(osType)
+              }}
+            >
+              <option value="linux">Linux (RHEL)</option>
+              <option value="solaris">Solaris</option>
+            </select>
           </div>
           <div className="col-span-2 flex items-center gap-3">
             <button

@@ -24,7 +24,7 @@ var ErrScanAlreadyRunning = errors.New("a scan is already running")
 
 // ScanService defines business operations for scans.
 type ScanService interface {
-	InitiateScan(ctx context.Context, limit, initiatedBy string) (*models.ScanJob, error)
+	InitiateScan(ctx context.Context, limit, initiatedBy string, osType models.OSType) (*models.ScanJob, error)
 	ProcessCallback(ctx context.Context, payload models.CallbackPayload) error
 	ProcessCallbackEnvelope(ctx context.Context, ansibleJobID string, hosts []models.CallbackPayload, failedHosts []string) error
 	RecordFailedHosts(ctx context.Context, ansibleJobID string, hostnames []string) error
@@ -81,20 +81,22 @@ type callbackJob struct {
 
 // DefaultScanService is the default implementation of ScanService.
 type DefaultScanService struct {
-	scanRepo          repository.ScanRepository
-	hostRepo          repository.HostRepository
-	snapshotRepo      repository.SnapshotRepository
-	incidentRepo      repository.IncidentRepository
-	baselineRepo      repository.BaselineRepository
-	aapClient         *aap.Client
-	comparisonService ComparisonService
-	jobTemplateName   string
-	backendBaseURL    string
-	appStage          string
-	cfg               *config.AppConfig
-	scanLock          sync.Mutex
-	scanLocked        atomic.Bool
-	callbackQueue     chan callbackJob
+	scanRepo                  repository.ScanRepository
+	hostRepo                  repository.HostRepository
+	snapshotRepo              repository.SnapshotRepository
+	incidentRepo              repository.IncidentRepository
+	baselineRepo              repository.BaselineRepository
+	aapClient                 *aap.Client
+	aapSolarisClient          *aap.Client
+	comparisonService         ComparisonService
+	jobTemplateName           string
+	jobTemplateNameSolaris    string
+	backendBaseURL            string
+	appStage                  string
+	cfg                       *config.AppConfig
+	scanLock                  sync.Mutex
+	scanLocked                atomic.Bool
+	callbackQueue             chan callbackJob
 }
 
 // NewDefaultScanService creates a new scan service.
@@ -105,8 +107,10 @@ func NewDefaultScanService(
 	incidentRepo repository.IncidentRepository,
 	baselineRepo repository.BaselineRepository,
 	aapClient *aap.Client,
+	aapSolarisClient *aap.Client,
 	comparisonService ComparisonService,
 	jobTemplateName string,
+	jobTemplateNameSolaris string,
 	backendBaseURL string,
 	appStage string,
 	cfg *config.AppConfig,
@@ -115,18 +119,20 @@ func NewDefaultScanService(
 	const callbackQueueSize = 100000
 
 	svc := &DefaultScanService{
-		scanRepo:          scanRepo,
-		hostRepo:          hostRepo,
-		snapshotRepo:      snapshotRepo,
-		incidentRepo:      incidentRepo,
-		baselineRepo:      baselineRepo,
-		aapClient:         aapClient,
-		comparisonService: comparisonService,
-		jobTemplateName:   jobTemplateName,
-		backendBaseURL:    backendBaseURL,
-		appStage:          appStage,
-		cfg:               cfg,
-		callbackQueue:     make(chan callbackJob, callbackQueueSize),
+		scanRepo:               scanRepo,
+		hostRepo:               hostRepo,
+		snapshotRepo:           snapshotRepo,
+		incidentRepo:           incidentRepo,
+		baselineRepo:           baselineRepo,
+		aapClient:              aapClient,
+		aapSolarisClient:       aapSolarisClient,
+		comparisonService:      comparisonService,
+		jobTemplateName:        jobTemplateName,
+		jobTemplateNameSolaris: jobTemplateNameSolaris,
+		backendBaseURL:         backendBaseURL,
+		appStage:               appStage,
+		cfg:                    cfg,
+		callbackQueue:          make(chan callbackJob, callbackQueueSize),
 	}
 
 	for i := 0; i < callbackWorkerCount; i++ {
@@ -159,7 +165,8 @@ func (s *DefaultScanService) releaseScanLock() {
 
 // InitiateScan resolves the configured AAP template, launches the job, and creates a ScanJob record.
 // Only one scan can be active at a time; if another scan is running, an error is returned.
-func (s *DefaultScanService) InitiateScan(ctx context.Context, limit, initiatedBy string) (*models.ScanJob, error) {
+// osType selects the AAP instance and job template (linux or solaris).
+func (s *DefaultScanService) InitiateScan(ctx context.Context, limit, initiatedBy string, osType models.OSType) (*models.ScanJob, error) {
 	if !s.scanLock.TryLock() {
 		return nil, ErrScanAlreadyRunning
 	}
@@ -176,17 +183,24 @@ func (s *DefaultScanService) InitiateScan(ctx context.Context, limit, initiatedB
 		return nil, ErrScanAlreadyRunning
 	}
 
-	templateID, err := s.aapClient.FindJobTemplateID(ctx, s.jobTemplateName)
+	aapClient, templateName, err := s.resolveAAPClient(osType)
+	if err != nil {
+		s.releaseScanLock()
+		return nil, err
+	}
+
+	templateID, err := aapClient.FindJobTemplateID(ctx, templateName)
 	if err != nil {
 		s.releaseScanLock()
 		fmt.Println(err)
-		return nil, fmt.Errorf("resolve template %q: %w", s.jobTemplateName, err)
+		return nil, fmt.Errorf("resolve template %q: %w", templateName, err)
 	}
 
 	now := time.Now().UTC()
 	job := &models.ScanJob{
 		ID:            uuid.New(),
 		JobTemplateID: templateID,
+		OSType:        osType,
 		Limit:         limit,
 		Status:        models.ScanJobStatusInitiating,
 		InitiatedBy:   initiatedBy,
@@ -219,7 +233,7 @@ func (s *DefaultScanService) InitiateScan(ctx context.Context, limit, initiatedB
 		Limit:     limit,
 		ExtraVars: string(extraVars),
 	}
-	aapJobID, err := s.aapClient.LaunchJobTemplate(ctx, templateID, launchReq)
+	aapJobID, err := aapClient.LaunchJobTemplate(ctx, templateID, launchReq)
 	if err != nil {
 		job.Status = models.ScanJobStatusFailed
 		job.ErrorMessage = err.Error()
@@ -239,6 +253,28 @@ func (s *DefaultScanService) InitiateScan(ctx context.Context, limit, initiatedB
 	}
 
 	return job, nil
+}
+
+// resolveAAPClient returns the AAP client and template name for the requested OS type.
+func (s *DefaultScanService) resolveAAPClient(osType models.OSType) (*aap.Client, string, error) {
+	switch osType {
+	case models.OSTypeSolaris:
+		if s.aapSolarisClient == nil {
+			return nil, "", fmt.Errorf("solaris AAP is not configured")
+		}
+		if s.jobTemplateNameSolaris == "" {
+			return nil, "", fmt.Errorf("solaris AAP job template name is not configured")
+		}
+		return s.aapSolarisClient, s.jobTemplateNameSolaris, nil
+	default:
+		if s.aapClient == nil {
+			return nil, "", fmt.Errorf("linux AAP is not configured")
+		}
+		if s.jobTemplateName == "" {
+			return nil, "", fmt.Errorf("linux AAP job template name is not configured")
+		}
+		return s.aapClient, s.jobTemplateName, nil
+	}
 }
 
 // ProcessCallback handles the JSON payload posted by AAP after a host is scanned.
@@ -589,35 +625,44 @@ func (s *DefaultScanService) PollActiveScans(ctx context.Context) error {
 
 		aapJobID, err := parseAAPJobID(job.AnsibleJobID)
 		if err == nil {
-			aapJob, err := s.aapClient.GetJob(ctx, aapJobID)
-			if err != nil {
-				if errors.Is(err, aap.ErrJobNotFound) {
-					job.Status = models.ScanJobStatusFailed
-					job.ErrorMessage = "AAP job not found; marked as stale"
-					job.CompletedAt = &now
-					job.UpdatedAt = now
-					if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
-						slog.Error("failed to mark stale scan job", "scan_job_id", job.ID, "error", err)
-					}
-					// Release the single-scan lock so a new scan can be started.
-					s.releaseScanLock()
-				}
-				// If AAP is unreachable, fall through to the generic staleness check below.
+			aapClient, _, clientErr := s.resolveAAPClient(job.OSType)
+			if clientErr != nil {
+				slog.Error("no AAP client for scan job; will rely on stale timeout",
+					"scan_job_id", job.ID,
+					"os_type", job.OSType,
+					"error", clientErr,
+				)
 			} else {
-				newStatus := mapAAPStatus(aapJob.Status)
-				if newStatus != job.Status {
-					job.Status = newStatus
-					job.UpdatedAt = now
-					if newStatus == models.ScanJobStatusCompleted || newStatus == models.ScanJobStatusFailed || newStatus == models.ScanJobStatusCancelled {
+				aapJob, err := aapClient.GetJob(ctx, aapJobID)
+				if err != nil {
+					if errors.Is(err, aap.ErrJobNotFound) {
+						job.Status = models.ScanJobStatusFailed
+						job.ErrorMessage = "AAP job not found; marked as stale"
 						job.CompletedAt = &now
-						// Release the single-scan lock when the job reaches a terminal state.
+						job.UpdatedAt = now
+						if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
+							slog.Error("failed to mark stale scan job", "scan_job_id", job.ID, "error", err)
+						}
+						// Release the single-scan lock so a new scan can be started.
 						s.releaseScanLock()
 					}
-					if aapJob.Failed && job.ErrorMessage == "" {
-						job.ErrorMessage = "AAP job failed"
-					}
-					if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
-						slog.Error("failed to update scan job status", "scan_job_id", job.ID, "error", err)
+					// If AAP is unreachable, fall through to the generic staleness check below.
+				} else {
+					newStatus := mapAAPStatus(aapJob.Status)
+					if newStatus != job.Status {
+						job.Status = newStatus
+						job.UpdatedAt = now
+						if newStatus == models.ScanJobStatusCompleted || newStatus == models.ScanJobStatusFailed || newStatus == models.ScanJobStatusCancelled {
+							job.CompletedAt = &now
+							// Release the single-scan lock when the job reaches a terminal state.
+							s.releaseScanLock()
+						}
+						if aapJob.Failed && job.ErrorMessage == "" {
+							job.ErrorMessage = "AAP job failed"
+						}
+						if err := s.scanRepo.UpdateScanJobStatus(ctx, job); err != nil {
+							slog.Error("failed to update scan job status", "scan_job_id", job.ID, "error", err)
+						}
 					}
 				}
 			}

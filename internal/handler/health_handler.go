@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"ulas-service/models"
 )
 
 // AAPHealthChecker abstracts the AAP health check operation.
@@ -14,8 +16,9 @@ type AAPHealthChecker interface {
 
 // HealthHandler exposes liveness and readiness probes.
 type HealthHandler struct {
-	db  DBPinger
-	aap AAPHealthChecker
+	db            DBPinger
+	aap           AAPHealthChecker
+	aapSolaris    AAPHealthChecker
 }
 
 // DBPinger abstracts the database ping operation.
@@ -24,8 +27,8 @@ type DBPinger interface {
 }
 
 // NewHealthHandler creates a new health handler.
-func NewHealthHandler(db DBPinger, aap AAPHealthChecker) *HealthHandler {
-	return &HealthHandler{db: db, aap: aap}
+func NewHealthHandler(db DBPinger, aap, aapSolaris AAPHealthChecker) *HealthHandler {
+	return &HealthHandler{db: db, aap: aap, aapSolaris: aapSolaris}
 }
 
 // HealthResponse is the shape returned by the health endpoint.
@@ -61,8 +64,22 @@ type AAPHealthResponse struct {
 }
 
 // HandleAAPHealth responds with the current AAP connectivity status.
+// Pass ?os_type=linux|solaris to check a specific instance; defaults to linux.
 func (h *HealthHandler) HandleAAPHealth(c *gin.Context) {
-	if h.aap == nil {
+	osType := models.OSType(c.Query("os_type"))
+	if osType == "" {
+		osType = models.OSTypeLinux
+	}
+
+	var checker AAPHealthChecker
+	switch osType {
+	case models.OSTypeSolaris:
+		checker = h.aapSolaris
+	default:
+		checker = h.aap
+	}
+
+	if checker == nil {
 		c.JSON(http.StatusServiceUnavailable, AAPHealthResponse{
 			Status:    "degraded",
 			AAPStatus: "not_configured",
@@ -70,7 +87,7 @@ func (h *HealthHandler) HandleAAPHealth(c *gin.Context) {
 		return
 	}
 
-	if err := h.aap.HealthCheck(c.Request.Context()); err != nil {
+	if err := checker.HealthCheck(c.Request.Context()); err != nil {
 		c.JSON(http.StatusServiceUnavailable, AAPHealthResponse{
 			Status:    "degraded",
 			AAPStatus: "unreachable",

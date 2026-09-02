@@ -1,0 +1,2 @@
+ALTER TABLE scan_jobs
+DROP COLUMN IF EXISTS os_type;

@@ -54,16 +54,17 @@ func NewPgScanRepository(db *sql.DB) *PgScanRepository {
 func (r *PgScanRepository) CreateScanJob(ctx context.Context, job *models.ScanJob) error {
 	query := `
 		INSERT INTO scan_jobs (
-			id, ansible_job_id, job_template_id, "limit", status, initiated_by,
+			id, ansible_job_id, job_template_id, os_type, "limit", status, initiated_by,
 			started_at, completed_at, total_hosts, callbacks_received,
 			successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		job.ID,
 		job.AnsibleJobID,
 		job.JobTemplateID,
+		job.OSType,
 		job.Limit,
 		job.Status,
 		job.InitiatedBy,
@@ -87,7 +88,7 @@ func (r *PgScanRepository) CreateScanJob(ctx context.Context, job *models.ScanJo
 // GetScanJobByID returns a scan job by its UUID.
 func (r *PgScanRepository) GetScanJobByID(ctx context.Context, id uuid.UUID) (*models.ScanJob, error) {
 	query := `
-		SELECT id, ansible_job_id, job_template_id, "limit", status, initiated_by,
+		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
 		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
@@ -100,6 +101,7 @@ func (r *PgScanRepository) GetScanJobByID(ctx context.Context, id uuid.UUID) (*m
 		&job.ID,
 		&job.AnsibleJobID,
 		&job.JobTemplateID,
+		&job.OSType,
 		&job.Limit,
 		&job.Status,
 		&job.InitiatedBy,
@@ -125,7 +127,7 @@ func (r *PgScanRepository) GetScanJobByID(ctx context.Context, id uuid.UUID) (*m
 // GetScanJobByAnsibleJobID returns a scan job by its AAP job ID.
 func (r *PgScanRepository) GetScanJobByAnsibleJobID(ctx context.Context, ansibleJobID string) (*models.ScanJob, error) {
 	query := `
-		SELECT id, ansible_job_id, job_template_id, "limit", status, initiated_by,
+		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
 		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
@@ -138,6 +140,7 @@ func (r *PgScanRepository) GetScanJobByAnsibleJobID(ctx context.Context, ansible
 		&job.ID,
 		&job.AnsibleJobID,
 		&job.JobTemplateID,
+		&job.OSType,
 		&job.Limit,
 		&job.Status,
 		&job.InitiatedBy,
@@ -163,7 +166,7 @@ func (r *PgScanRepository) GetScanJobByAnsibleJobID(ctx context.Context, ansible
 // ListScanJobs returns all scan jobs ordered by creation time descending.
 func (r *PgScanRepository) ListScanJobs(ctx context.Context) ([]models.ScanJob, error) {
 	query := `
-		SELECT id, ansible_job_id, job_template_id, "limit", status, initiated_by,
+		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
 		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
@@ -182,6 +185,7 @@ func (r *PgScanRepository) ListScanJobs(ctx context.Context) ([]models.ScanJob, 
 			&job.ID,
 			&job.AnsibleJobID,
 			&job.JobTemplateID,
+			&job.OSType,
 			&job.Limit,
 			&job.Status,
 			&job.InitiatedBy,
@@ -223,7 +227,7 @@ func (r *PgScanRepository) ListScanJobsPaginated(ctx context.Context, page, limi
 	}
 
 	query := `
-		SELECT id, ansible_job_id, job_template_id, "limit", status, initiated_by,
+		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
 		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
@@ -243,6 +247,7 @@ func (r *PgScanRepository) ListScanJobsPaginated(ctx context.Context, page, limi
 			&job.ID,
 			&job.AnsibleJobID,
 			&job.JobTemplateID,
+			&job.OSType,
 			&job.Limit,
 			&job.Status,
 			&job.InitiatedBy,
@@ -321,7 +326,7 @@ func (r *PgScanRepository) ListScanJobsPaginatedWithDeviationCounts(ctx context.
 	}
 
 	query := `
-		SELECT j.id, j.ansible_job_id, j.job_template_id, j."limit", j.status, j.initiated_by,
+		SELECT j.id, j.ansible_job_id, j.job_template_id, COALESCE(j.os_type, 'linux') AS os_type, j."limit", j.status, j.initiated_by,
 		       j.started_at, j.completed_at, j.total_hosts, j.callbacks_received,
 		       j.successful_hosts, j.failed_hosts, j.error_message, j.baseline_snapshot, j.created_at, j.updated_at,
 		       ` + deviationSum + ` AS total_deviations,
@@ -344,6 +349,7 @@ func (r *PgScanRepository) ListScanJobsPaginatedWithDeviationCounts(ctx context.
 			&job.ID,
 			&job.AnsibleJobID,
 			&job.JobTemplateID,
+			&job.OSType,
 			&job.Limit,
 			&job.Status,
 			&job.InitiatedBy,
@@ -397,24 +403,26 @@ func (r *PgScanRepository) UpdateScanJob(ctx context.Context, job *models.ScanJo
 		UPDATE scan_jobs
 		SET ansible_job_id = $2,
 		    job_template_id = $3,
-		    "limit" = $4,
-		    status = $5,
-		    initiated_by = $6,
-		    started_at = $7,
-		    completed_at = $8,
-		    total_hosts = $9,
-		    callbacks_received = $10,
-		    successful_hosts = $11,
-		    failed_hosts = $12,
-		    error_message = $13,
-		    baseline_snapshot = $14,
-		    updated_at = $15
+		    os_type = $4,
+		    "limit" = $5,
+		    status = $6,
+		    initiated_by = $7,
+		    started_at = $8,
+		    completed_at = $9,
+		    total_hosts = $10,
+		    callbacks_received = $11,
+		    successful_hosts = $12,
+		    failed_hosts = $13,
+		    error_message = $14,
+		    baseline_snapshot = $15,
+		    updated_at = $16
 		WHERE id = $1
 	`
 	res, err := r.db.ExecContext(ctx, query,
 		job.ID,
 		job.AnsibleJobID,
 		job.JobTemplateID,
+		job.OSType,
 		job.Limit,
 		job.Status,
 		job.InitiatedBy,

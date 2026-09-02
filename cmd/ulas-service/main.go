@@ -63,6 +63,10 @@ func main() {
 	)
 
 	aapClient := aap.NewClient(cfg.AAPURL+cfg.AAPRESTVERSION, cfg.AAPUsername, cfg.AAPPassword)
+	var aapSolarisClient *aap.Client
+	if cfg.AAPSolarisURL != "" {
+		aapSolarisClient = aap.NewClient(cfg.AAPSolarisURL+cfg.AAPRESTVERSIONSolaris, cfg.AAPUsernameSolaris, cfg.AAPPasswordSolaris)
+	}
 	scanService := service.NewDefaultScanService(
 		scanRepo,
 		hostRepo,
@@ -70,8 +74,10 @@ func main() {
 		incidentRepo,
 		baselineRepo,
 		aapClient,
+		aapSolarisClient,
 		comparisonService,
 		cfg.AAPJobTemplateName,
+		cfg.AAPJobTemplateNameSolaris,
 		cfg.BackEndBaseUrl,
 		cfg.AppStage,
 		cfg,
@@ -121,7 +127,7 @@ func main() {
 
 	authHandler := handler.NewAuthHandler(tokenMaker, ldapClient, cfg)
 
-	healthHandler := handler.NewHealthHandler(db, aapClient)
+	healthHandler := handler.NewHealthHandler(db, aapClient, aapSolarisClient)
 	r := router.New(
 		authHandler,
 		tokenMaker,

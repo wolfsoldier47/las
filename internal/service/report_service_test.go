@@ -13,7 +13,7 @@ import (
 
 type fakeScanServiceForReport struct{ detail *ScanDetail }
 
-func (f *fakeScanServiceForReport) InitiateScan(context.Context, string, string) (*models.ScanJob, error) {
+func (f *fakeScanServiceForReport) InitiateScan(context.Context, string, string, models.OSType) (*models.ScanJob, error) {
 	return nil, nil
 }
 func (f *fakeScanServiceForReport) ProcessCallback(context.Context, models.CallbackPayload) error {

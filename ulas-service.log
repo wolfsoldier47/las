@@ -5631,3 +5631,18 @@
 {"time":"2026-09-02T02:44:18.269768256+08:00","level":"INFO","msg":"Configuration loaded successfully"}
 {"time":"2026-09-02T02:44:18.518696422+08:00","level":"INFO","msg":"DB initialized successfully"}
 {"time":"2026-09-02T02:44:18.528738119+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-09-02T15:12:13.389337561+08:00","level":"WARN","msg":"failed to load os versions config","error":"yaml: line 13: could not find expected ':'"}
+{"time":"2026-09-02T15:12:13.390071965+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-09-02T15:12:13.657959477+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-09-02T15:12:13.658780615+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-09-02T15:12:43.661343995+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 3, name \"os_type\": converting NULL to string is unsupported"}
+{"time":"2026-09-02T15:13:13.670964244+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 3, name \"os_type\": converting NULL to string is unsupported"}
+{"time":"2026-09-02T15:13:43.671289026+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 3, name \"os_type\": converting NULL to string is unsupported"}
+{"time":"2026-09-02T15:14:13.676206724+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 3, name \"os_type\": converting NULL to string is unsupported"}
+{"time":"2026-09-02T15:14:43.677054517+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 3, name \"os_type\": converting NULL to string is unsupported"}
+{"time":"2026-09-02T15:15:13.659723119+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 3, name \"os_type\": converting NULL to string is unsupported"}
+{"time":"2026-09-02T15:15:43.667986109+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 3, name \"os_type\": converting NULL to string is unsupported"}
+{"time":"2026-09-02T15:16:47.411012152+08:00","level":"WARN","msg":"failed to load os versions config","error":"yaml: line 13: could not find expected ':'"}
+{"time":"2026-09-02T15:16:47.411110368+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-09-02T15:16:47.555293884+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-09-02T15:16:47.556559314+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}

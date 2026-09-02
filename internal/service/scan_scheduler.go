@@ -79,7 +79,7 @@ func (s *ScanScheduler) runDueSchedules() {
 			"limit", schedule.Limit,
 		)
 
-		job, err := s.scanService.InitiateScan(ctx, schedule.Limit, "scheduler")
+		job, err := s.scanService.InitiateScan(ctx, schedule.Limit, "scheduler", models.OSTypeLinux)
 		if err != nil {
 			if errors.Is(err, ErrScanAlreadyRunning) {
 				slog.Info("scheduled scan skipped because another scan is already running",

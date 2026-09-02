@@ -89,6 +89,7 @@ type ScanJob struct {
 	ID            uuid.UUID     `db:"id" json:"id"`
 	AnsibleJobID  string        `db:"ansible_job_id" json:"ansible_job_id"`   // job ID returned by Tower on launch
 	JobTemplateID int           `db:"job_template_id" json:"job_template_id"` // Tower Job Template ID
+	OSType        OSType        `db:"os_type" json:"os_type"`                 // target OS type (linux, solaris, aix)
 	Limit         string        `db:"limit" json:"limit,omitempty"`           // host pattern passed to Tower
 	Status        ScanJobStatus `db:"status" json:"status"`
 	InitiatedBy   string        `db:"initiated_by" json:"initiated_by,omitempty"`
