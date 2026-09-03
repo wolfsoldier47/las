@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -207,6 +208,10 @@ func (h *ScanHandler) ScanCallback(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
+	// Receipt log: confirms the callback reached the handler at all. Every
+	// other log line ([ENVELOPE], callback errors) only appears after this.
+	slog.Info("scan callback received", "bytes", len(body))
+
 	// Try the new envelope format first.
 	// A final summary callback may contain only ansible_job_id + failed_hosts with no hosts.
 	var envelope models.CallbackEnvelope
@@ -238,6 +243,10 @@ func (h *ScanHandler) ScanCallback(c *gin.Context) {
 		// Fallback to a single host payload.
 		var single models.CallbackPayload
 		if err := json.Unmarshal(body, &single); err != nil {
+			slog.Warn("scan callback rejected: body is neither an envelope, an array, nor a host payload",
+				"error", err,
+				"body", truncateForLog(string(body), 256),
+			)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -269,6 +278,14 @@ func (h *ScanHandler) ScanCallback(c *gin.Context) {
 	}
 
 	c.Status(http.StatusAccepted)
+}
+
+// truncateForLog shortens a string for safe inclusion in log output.
+func truncateForLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 // normalizeAnsibleJobID converts an int or string ansible_job_id to a string.
