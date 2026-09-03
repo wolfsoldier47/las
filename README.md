@@ -5,6 +5,8 @@ Ulas is a Go backend service (Gin + GORM + PostgreSQL) with a Vite/React fronten
 
 
 ```
+{"time":"2026-09-03T15:16:47.407721198Z","level":"INFO","msg":"scan callback received","bytes":70}
+[ENVELOPE] job=451853 hosts=1 failed=0 queue_depth=0
 {
       "ansible_job_id": "438578",
       "hosts": [
