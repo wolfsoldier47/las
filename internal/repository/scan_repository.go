@@ -90,7 +90,7 @@ func (r *PgScanRepository) GetScanJobByID(ctx context.Context, id uuid.UUID) (*m
 	query := `
 		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
-		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
+		       successful_hosts, failed_hosts, failed_host_names, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
 		WHERE id = $1
 	`
@@ -111,6 +111,7 @@ func (r *PgScanRepository) GetScanJobByID(ctx context.Context, id uuid.UUID) (*m
 		&job.CallbacksReceived,
 		&job.SuccessfulHosts,
 		&job.FailedHosts,
+		stringSliceScanner{&job.FailedHostNames},
 		&job.ErrorMessage,
 		baselineSnapshotScanner{&job.BaselineSnapshot},
 		&job.CreatedAt,
@@ -129,7 +130,7 @@ func (r *PgScanRepository) GetScanJobByAnsibleJobID(ctx context.Context, ansible
 	query := `
 		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
-		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
+		       successful_hosts, failed_hosts, failed_host_names, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
 		WHERE ansible_job_id = $1
 	`
@@ -150,6 +151,7 @@ func (r *PgScanRepository) GetScanJobByAnsibleJobID(ctx context.Context, ansible
 		&job.CallbacksReceived,
 		&job.SuccessfulHosts,
 		&job.FailedHosts,
+		stringSliceScanner{&job.FailedHostNames},
 		&job.ErrorMessage,
 		baselineSnapshotScanner{&job.BaselineSnapshot},
 		&job.CreatedAt,
@@ -168,7 +170,7 @@ func (r *PgScanRepository) ListScanJobs(ctx context.Context) ([]models.ScanJob, 
 	query := `
 		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
-		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
+		       successful_hosts, failed_hosts, failed_host_names, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
 		ORDER BY created_at DESC
 	`
@@ -195,6 +197,7 @@ func (r *PgScanRepository) ListScanJobs(ctx context.Context) ([]models.ScanJob, 
 			&job.CallbacksReceived,
 			&job.SuccessfulHosts,
 			&job.FailedHosts,
+			stringSliceScanner{&job.FailedHostNames},
 			&job.ErrorMessage,
 			baselineSnapshotScanner{&job.BaselineSnapshot},
 			&job.CreatedAt,
@@ -229,7 +232,7 @@ func (r *PgScanRepository) ListScanJobsPaginated(ctx context.Context, page, limi
 	query := `
 		SELECT id, ansible_job_id, job_template_id, COALESCE(os_type, 'linux') AS os_type, "limit", status, initiated_by,
 		       started_at, completed_at, total_hosts, callbacks_received,
-		       successful_hosts, failed_hosts, error_message, baseline_snapshot, created_at, updated_at
+		       successful_hosts, failed_hosts, failed_host_names, error_message, baseline_snapshot, created_at, updated_at
 		FROM scan_jobs
 		ORDER BY created_at DESC
 		LIMIT $1 OFFSET $2
@@ -257,6 +260,7 @@ func (r *PgScanRepository) ListScanJobsPaginated(ctx context.Context, page, limi
 			&job.CallbacksReceived,
 			&job.SuccessfulHosts,
 			&job.FailedHosts,
+			stringSliceScanner{&job.FailedHostNames},
 			&job.ErrorMessage,
 			baselineSnapshotScanner{&job.BaselineSnapshot},
 			&job.CreatedAt,
@@ -328,7 +332,7 @@ func (r *PgScanRepository) ListScanJobsPaginatedWithDeviationCounts(ctx context.
 	query := `
 		SELECT j.id, j.ansible_job_id, j.job_template_id, COALESCE(j.os_type, 'linux') AS os_type, j."limit", j.status, j.initiated_by,
 		       j.started_at, j.completed_at, j.total_hosts, j.callbacks_received,
-		       j.successful_hosts, j.failed_hosts, j.error_message, j.baseline_snapshot, j.created_at, j.updated_at,
+		       j.successful_hosts, j.failed_hosts, j.failed_host_names, j.error_message, j.baseline_snapshot, j.created_at, j.updated_at,
 		       ` + deviationSum + ` AS total_deviations,
 		       ` + allowedSum + ` AS total_allowed_deviations
 		FROM scan_jobs j
@@ -359,6 +363,7 @@ func (r *PgScanRepository) ListScanJobsPaginatedWithDeviationCounts(ctx context.
 			&job.CallbacksReceived,
 			&job.SuccessfulHosts,
 			&job.FailedHosts,
+			stringSliceScanner{&job.FailedHostNames},
 			&job.ErrorMessage,
 			baselineSnapshotScanner{&job.BaselineSnapshot},
 			&job.CreatedAt,
@@ -847,4 +852,30 @@ func (s baselineSnapshotScanner) Scan(value interface{}) error {
 		return nil
 	}
 	return json.Unmarshal(data, s.snapshot)
+}
+
+// stringSliceScanner scans a JSONB text array column into a string slice.
+type stringSliceScanner struct {
+	slice *[]string
+}
+
+func (s stringSliceScanner) Scan(value interface{}) error {
+	if value == nil {
+		*s.slice = nil
+		return nil
+	}
+	var data []byte
+	switch v := value.(type) {
+	case []byte:
+		data = v
+	case string:
+		data = []byte(v)
+	default:
+		return fmt.Errorf("cannot scan string slice: unexpected type %T", value)
+	}
+	if len(data) == 0 {
+		*s.slice = nil
+		return nil
+	}
+	return json.Unmarshal(data, s.slice)
 }
