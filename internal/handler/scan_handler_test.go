@@ -125,3 +125,67 @@ func TestScanCallback_EnvelopeUnknownJobReturns404(t *testing.T) {
 		t.Fatalf("expected 404, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+// The final failed_hosts summary may key the job as "job_id" instead of
+// "ansible_job_id" depending on the AAP version sending it.
+func TestScanCallback_SummaryKeyedByJobID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeScanService{}
+	h := NewScanHandler(fake)
+
+	body := `{"job_id": "451853", "failed_hosts": ["test.zit.com"]}`
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/callbacks/scan", bytes.NewBufferString(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ScanCallback(c)
+	c.Writer.WriteHeaderNow()
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !fake.envelopeCalled {
+		t.Fatal("expected ProcessCallbackEnvelope to be called")
+	}
+	if fake.envelopeJobID != "451853" {
+		t.Errorf("expected job id 451853, got %q", fake.envelopeJobID)
+	}
+	if len(fake.envelopeFailed) != 1 || fake.envelopeFailed[0] != "test.zit.com" {
+		t.Errorf("unexpected failed hosts: %v", fake.envelopeFailed)
+	}
+	if len(fake.envelopeHosts) != 0 {
+		t.Errorf("expected no hosts in final summary, got %d", len(fake.envelopeHosts))
+	}
+}
+
+// A legacy host payload keyed by job_id (with machine_name) must NOT be
+// swallowed by the job_id fallback — it still flows through the legacy path
+// with its host data intact.
+func TestScanCallback_LegacyHostPayloadKeyedByJobID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeScanService{}
+	h := NewScanHandler(fake)
+
+	body := `{"job_id": "451853", "machine_name": "host1.example.com", "os_type": "Linux"}`
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/callbacks/scan", bytes.NewBufferString(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.ScanCallback(c)
+	c.Writer.WriteHeaderNow()
+
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if fake.envelopeJobID != "451853" {
+		t.Errorf("expected job id 451853, got %q", fake.envelopeJobID)
+	}
+	if len(fake.envelopeHosts) != 1 || fake.envelopeHosts[0].MachineName != "host1.example.com" {
+		t.Errorf("legacy host payload lost: hosts=%v", fake.envelopeHosts)
+	}
+	if len(fake.envelopeFailed) != 0 {
+		t.Errorf("unexpected failed hosts on legacy payload: %v", fake.envelopeFailed)
+	}
+}

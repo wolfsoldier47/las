@@ -228,6 +228,7 @@ func (s *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 // FailedHosts lists hostnames (or host IDs) that AAP could not reach.
 type CallbackEnvelope struct {
 	AnsibleJobID interface{}         `json:"ansible_job_id" validate:"required"`
+	JobID        interface{}         `json:"job_id,omitempty"` // some AAP versions send job_id instead of ansible_job_id on the failed_hosts summary
 	Hosts        []CallbackPayload   `json:"hosts" validate:"required"`
 	FailedHosts  FlexibleStringSlice `json:"failed_hosts,omitempty"`
 }

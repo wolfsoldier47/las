@@ -215,26 +215,36 @@ func (h *ScanHandler) ScanCallback(c *gin.Context) {
 	// Try the new envelope format first.
 	// A final summary callback may contain only ansible_job_id + failed_hosts with no hosts.
 	var envelope models.CallbackEnvelope
-	if err := json.Unmarshal(body, &envelope); err == nil && envelope.AnsibleJobID != nil {
-		jobID := normalizeAnsibleJobID(envelope.AnsibleJobID)
-		if jobID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ansible_job_id"})
-			return
+	if err := json.Unmarshal(body, &envelope); err == nil {
+		// Some AAP versions key the final failed_hosts summary as "job_id"
+		// instead of "ansible_job_id". Only fall back to it for a summary
+		// (failed_hosts present, no hosts) so legacy host payloads keyed by
+		// job_id keep flowing through the legacy path below.
+		jobIDRaw := envelope.AnsibleJobID
+		if jobIDRaw == nil && len(envelope.FailedHosts) > 0 && len(envelope.Hosts) == 0 {
+			jobIDRaw = envelope.JobID
 		}
-
-		// Process the envelope asynchronously with a worker pool so large inventories
-		// (50k+ hosts) do not time out the HTTP request.
-		if err := h.scanService.ProcessCallbackEnvelope(c.Request.Context(), jobID, envelope.Hosts, envelope.FailedHosts); err != nil {
-			if errors.Is(err, repository.ErrScanJobNotFound) {
-				c.JSON(http.StatusNotFound, gin.H{"error": "no scan job found for ansible_job_id " + jobID})
+		if jobIDRaw != nil {
+			jobID := normalizeAnsibleJobID(jobIDRaw)
+			if jobID == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ansible_job_id"})
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+
+			// Process the envelope asynchronously with a worker pool so large inventories
+			// (50k+ hosts) do not time out the HTTP request.
+			if err := h.scanService.ProcessCallbackEnvelope(c.Request.Context(), jobID, envelope.Hosts, envelope.FailedHosts); err != nil {
+				if errors.Is(err, repository.ErrScanJobNotFound) {
+					c.JSON(http.StatusNotFound, gin.H{"error": "no scan job found for ansible_job_id " + jobID})
+					return
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+
+			c.Status(http.StatusAccepted)
 			return
 		}
-
-		c.Status(http.StatusAccepted)
-		return
 	}
 
 	// Legacy: array of host payloads.

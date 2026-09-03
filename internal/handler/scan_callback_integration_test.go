@@ -85,6 +85,12 @@ func TestScanCallback_FailedHostsStored_DB(t *testing.T) {
 			body:     `{"ansible_job_id": "%s", "failed_hosts": [123, 345]}`,
 			expected: []string{"123", "345"},
 		},
+		{
+			// Some AAP versions key the final summary as job_id instead of ansible_job_id.
+			name:     "summary keyed by job_id",
+			body:     `{"job_id": "%s", "failed_hosts": ["test.zit.com"]}`,
+			expected: []string{"test.zit.com"},
+		},
 	}
 
 	for _, tc := range cases {
