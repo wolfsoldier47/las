@@ -30,8 +30,8 @@ func NewScanHandler(scanService service.ScanService) *ScanHandler {
 // InitiateScanRequest is the body for POST /api/scans.
 // The job template name is read from the backend configuration.
 type InitiateScanRequest struct {
-	Limit  string         `json:"limit"`
-	OSType models.OSType  `json:"os_type"`
+	Limit  string        `json:"limit"`
+	OSType models.OSType `json:"os_type"`
 }
 
 // ListScans handles GET /api/scans.
@@ -171,7 +171,7 @@ func (h *ScanHandler) InitiateScan(c *gin.Context) {
 		return
 	}
 
-	initiatedBy := c.GetString("user") // placeholder for auth
+	initiatedBy := c.GetString("username") // placeholder for auth
 	if initiatedBy == "" {
 		initiatedBy = "unknown"
 	}

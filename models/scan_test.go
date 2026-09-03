@@ -224,6 +224,64 @@ func TestCallbackEnvelopeUnmarshal(t *testing.T) {
 	}
 }
 
+func TestCallbackEnvelopeUnmarshal_NumericFailedHosts(t *testing.T) {
+	envelopeJSON := `{
+		"ansible_job_id": "438578",
+		"failed_hosts": [123, 345]
+	}`
+
+	var envelope CallbackEnvelope
+	if err := json.Unmarshal([]byte(envelopeJSON), &envelope); err != nil {
+		t.Fatalf("unmarshal envelope failed: %v", err)
+	}
+
+	if len(envelope.FailedHosts) != 2 {
+		t.Fatalf("expected 2 failed hosts, got %d", len(envelope.FailedHosts))
+	}
+	if envelope.FailedHosts[0] != "123" {
+		t.Errorf("expected first failed host \"123\", got %q", envelope.FailedHosts[0])
+	}
+	if envelope.FailedHosts[1] != "345" {
+		t.Errorf("expected second failed host \"345\", got %q", envelope.FailedHosts[1])
+	}
+	if len(envelope.Hosts) != 0 {
+		t.Errorf("expected no hosts in final summary callback, got %d", len(envelope.Hosts))
+	}
+}
+
+func TestCallbackEnvelopeUnmarshal_EmptyFailedHosts(t *testing.T) {
+	envelopeJSON := `{
+		"ansible_job_id": "438578",
+		"failed_hosts": []
+	}`
+
+	var envelope CallbackEnvelope
+	if err := json.Unmarshal([]byte(envelopeJSON), &envelope); err != nil {
+		t.Fatalf("unmarshal envelope failed: %v", err)
+	}
+	if len(envelope.FailedHosts) != 0 {
+		t.Errorf("expected empty failed hosts, got %v", envelope.FailedHosts)
+	}
+}
+
+func TestCallbackEnvelopeUnmarshal_StringFailedHosts(t *testing.T) {
+	envelopeJSON := `{
+		"ansible_job_id": "438578",
+		"failed_hosts": ["host1.example.com", "host2.example.com"]
+	}`
+
+	var envelope CallbackEnvelope
+	if err := json.Unmarshal([]byte(envelopeJSON), &envelope); err != nil {
+		t.Fatalf("unmarshal envelope failed: %v", err)
+	}
+	if len(envelope.FailedHosts) != 2 {
+		t.Fatalf("expected 2 failed hosts, got %d", len(envelope.FailedHosts))
+	}
+	if envelope.FailedHosts[0] != "host1.example.com" {
+		t.Errorf("unexpected failed host: %q", envelope.FailedHosts[0])
+	}
+}
+
 func TestOSTypeNormalization(t *testing.T) {
 	tests := []struct {
 		input    string

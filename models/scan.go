@@ -193,13 +193,43 @@ type CallbackPayload struct {
 	AnsibleFacts map[string]interface{} `json:"ansible_facts,omitempty"`
 }
 
+// FlexibleStringSlice is a JSON array that accepts both string and numeric
+// elements and stores them as strings. AAP may send failed_hosts as host
+// IDs (integers) or hostnames (strings), so both shapes are normalized.
+type FlexibleStringSlice []string
+
+// UnmarshalJSON accepts a JSON array of strings, numbers, or a mix and stores
+// every element as a string.
+func (s *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
+	var raw []interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*s = make([]string, 0, len(raw))
+	for _, v := range raw {
+		switch id := v.(type) {
+		case string:
+			*s = append(*s, id)
+		case float64:
+			*s = append(*s, fmt.Sprintf("%.0f", id))
+		case int:
+			*s = append(*s, fmt.Sprintf("%d", id))
+		case int64:
+			*s = append(*s, fmt.Sprintf("%d", id))
+		default:
+			*s = append(*s, fmt.Sprintf("%v", id))
+		}
+	}
+	return nil
+}
+
 // CallbackEnvelope is the new AAP callback format: a top-level ansible_job_id
 // with a nested hosts array. JobID is no longer required inside each host object.
-// FailedHosts lists hostnames that AAP could not reach.
+// FailedHosts lists hostnames (or host IDs) that AAP could not reach.
 type CallbackEnvelope struct {
-	AnsibleJobID interface{}       `json:"ansible_job_id" validate:"required"`
-	Hosts        []CallbackPayload `json:"hosts" validate:"required"`
-	FailedHosts  []string          `json:"failed_hosts,omitempty"`
+	AnsibleJobID interface{}         `json:"ansible_job_id" validate:"required"`
+	Hosts        []CallbackPayload   `json:"hosts" validate:"required"`
+	FailedHosts  FlexibleStringSlice `json:"failed_hosts,omitempty"`
 }
 
 // UnmarshalJSON accepts both "hosts" and the singular "host" for the host list

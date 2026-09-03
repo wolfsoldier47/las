@@ -1,5 +1,6 @@
 # Binaries
-
+first i want to add admin and non admin rights where the username will be added as ADMIN into a table and if its not added as ADMIN its a read only     │
+ │   user. the admin can run scans change baselines
 *.exe
 *.dll
 *.so

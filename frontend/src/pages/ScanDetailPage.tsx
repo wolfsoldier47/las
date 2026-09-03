@@ -54,6 +54,7 @@ interface ScanJob {
   job_template_id: number
   limit?: string
   status: string
+  initiated_by?: string
   callbacks_received: number
   successful_hosts: number
   failed_hosts: number
@@ -204,6 +205,7 @@ export default function ScanDetailPage() {
           <div><span className="text-muted-foreground">Job ID:</span> <span className="font-mono text-xs">{detail.job.id}</span></div>
           <div><span className="text-muted-foreground">AAP Job ID:</span> <span className="font-mono text-xs">{detail.job.ansible_job_id || '-'}</span></div>
           <div><span className="text-muted-foreground">Template ID:</span> {detail.job.job_template_id}</div>
+          <div><span className="text-muted-foreground">Initiated By:</span> {detail.job.initiated_by || '-'}</div>
           <div><span className="text-muted-foreground">Limit:</span> {detail.job.limit || '-'}</div>
           <div><span className="text-muted-foreground">Status:</span> <StatusBadge status={detail.job.status} /></div>
           <div><span className="text-muted-foreground">Callbacks:</span> {detail.job.callbacks_received}</div>

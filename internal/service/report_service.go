@@ -101,6 +101,16 @@ func printWrappedHeader(pdf *fpdf.Fpdf, headers []string, widths []float64, line
 	printWrappedRow(pdf, headers, widths, lineHeight, true, pageLimit, nil)
 }
 
+// initiatedBy renders the scan initiator for display, falling back to a
+// placeholder when the initiating user could not be determined (e.g. older
+// jobs recorded before initiated_by was tracked).
+func initiatedBy(initiator string) string {
+	if initiator == "" {
+		return "unknown"
+	}
+	return initiator
+}
+
 // GenerateScanReport builds a PDF report for a scan job.
 func (s *DefaultReportService) GenerateScanReport(ctx context.Context, scanJobID uuid.UUID) ([]byte, error) {
 	detail, err := s.scanService.GetScanDetail(ctx, scanJobID, true)
@@ -135,6 +145,7 @@ func (s *DefaultReportService) GenerateScanReport(ctx context.Context, scanJobID
 		{"Template ID", fmt.Sprintf("%d", detail.Job.JobTemplateID)},
 		{"Limit", detail.Job.Limit},
 		{"Status", string(detail.Job.Status)},
+		{"Initiated By", initiatedBy(detail.Job.InitiatedBy)},
 		{"Created", detail.Job.CreatedAt.Format(time.RFC3339)},
 		{"Successful Hosts", fmt.Sprintf("%d", detail.Job.SuccessfulHosts)},
 		{"Failed Hosts", fmt.Sprintf("%d", detail.Job.FailedHosts)},
