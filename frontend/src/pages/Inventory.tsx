@@ -20,20 +20,6 @@ interface PaginatedHosts {
   limit: number
 }
 
-function StatusBadge({ status }: { status: 'deviation' | 'allowed' | 'clean' }) {
-  const styles = {
-    deviation: 'bg-red-500/10 text-red-500 border-red-500/15',
-    allowed: 'bg-primary/10 text-primary border-primary/15',
-    clean: 'bg-green-500/10 text-green-500 border-green-500/15',
-  }
-  const labels = { deviation: '⚠️ Deviation', allowed: '✓ Allowed', clean: '✓ Clean' }
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${styles[status]}`}>
-      {labels[status]}
-    </span>
-  )
-}
-
 export default function Inventory() {
   const [hosts, setHosts] = useState<Host[]>([])
   const [error, setError] = useState('')
@@ -162,7 +148,6 @@ export default function Inventory() {
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">OS Name</th>
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">Environment</th>
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">Datacenter</th>
-                  <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">Status</th>
                   <th className="px-5 py-2.5 text-right text-xs font-medium text-muted-foreground"></th>
                 </tr>
               </thead>
@@ -174,7 +159,6 @@ export default function Inventory() {
                     <td className="px-5 py-3 text-muted-foreground text-xs">{host.os_name || '-'}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{host.environment || '-'}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{host.datacenter || '-'}</td>
-                    <td className="px-5 py-3"><StatusBadge status="clean" /></td>
                     <td className="px-5 py-3 text-right">
                       <Link
                         to={`/snapshots/${host.id}/passwd`}
