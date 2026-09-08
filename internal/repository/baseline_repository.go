@@ -19,6 +19,7 @@ var ErrBaselineNotFound = errors.New("baseline not found")
 type BaselineEntryInput struct {
 	EntryKey   string
 	EntryValue string
+	CheckIDs   bool // privilege list: compare uid/gid for this entry
 }
 
 // BaselineVersionSummary represents a versioned master file scope.
@@ -86,9 +87,9 @@ func (r *PgBaselineRepository) Create(ctx context.Context, baseline *models.Mast
 	query := `
 		INSERT INTO master_baselines (
 			id, os_type, file_type, entry_key, entry_value,
-			version, is_active, description, created_by, created_at, updated_at
+			version, is_active, check_ids, description, created_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		baseline.ID,
@@ -98,6 +99,7 @@ func (r *PgBaselineRepository) Create(ctx context.Context, baseline *models.Mast
 		baseline.EntryValue,
 		baseline.Version,
 		baseline.IsActive,
+		baseline.CheckIDs,
 		baseline.Description,
 		baseline.CreatedBy,
 		baseline.CreatedAt,
@@ -113,7 +115,7 @@ func (r *PgBaselineRepository) Create(ctx context.Context, baseline *models.Mast
 func (r *PgBaselineRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.MasterBaseline, error) {
 	query := `
 		SELECT id, os_type, file_type, entry_key, entry_value,
-		       version, is_active, description, created_by, created_at, updated_at
+		       version, is_active, check_ids, description, created_by, created_at, updated_at
 		FROM master_baselines
 		WHERE id = $1
 	`
@@ -128,6 +130,7 @@ func (r *PgBaselineRepository) GetByID(ctx context.Context, id uuid.UUID) (*mode
 		&baseline.EntryValue,
 		&baseline.Version,
 		&baseline.IsActive,
+		&baseline.CheckIDs,
 		&baseline.Description,
 		&baseline.CreatedBy,
 		&baseline.CreatedAt,
@@ -145,7 +148,7 @@ func (r *PgBaselineRepository) GetByID(ctx context.Context, id uuid.UUID) (*mode
 func (r *PgBaselineRepository) List(ctx context.Context, filters BaselineFilters) ([]models.MasterBaseline, error) {
 	query := `
 		SELECT id, os_type, file_type, entry_key, entry_value,
-		       version, is_active, description, created_by, created_at, updated_at
+		       version, is_active, check_ids, description, created_by, created_at, updated_at
 		FROM master_baselines
 		WHERE 1=1
 	`
@@ -192,6 +195,7 @@ func (r *PgBaselineRepository) List(ctx context.Context, filters BaselineFilters
 			&baseline.EntryValue,
 			&baseline.Version,
 			&baseline.IsActive,
+			&baseline.CheckIDs,
 			&baseline.Description,
 			&baseline.CreatedBy,
 			&baseline.CreatedAt,
@@ -218,9 +222,10 @@ func (r *PgBaselineRepository) Update(ctx context.Context, baseline *models.Mast
 		    entry_value = $5,
 		    version = $6,
 		    is_active = $7,
-		    description = $8,
-		    created_by = $9,
-		    updated_at = $10
+		    check_ids = $8,
+		    description = $9,
+		    created_by = $10,
+		    updated_at = $11
 		WHERE id = $1
 	`
 	res, err := r.db.ExecContext(ctx, query,
@@ -231,6 +236,7 @@ func (r *PgBaselineRepository) Update(ctx context.Context, baseline *models.Mast
 		baseline.EntryValue,
 		baseline.Version,
 		baseline.IsActive,
+		baseline.CheckIDs,
 		baseline.Description,
 		baseline.CreatedBy,
 		baseline.UpdatedAt,
@@ -310,15 +316,15 @@ func (r *PgBaselineRepository) CreateVersionedEntries(
 	insertQuery := `
 		INSERT INTO master_baselines (
 			id, os_type, file_type, entry_key, entry_value,
-			version, is_active, description, created_by, created_at, updated_at
+			version, is_active, check_ids, description, created_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`
 	for _, entry := range entries {
 		_, err := tx.ExecContext(ctx, insertQuery,
 			uuid.New(), osType, fileType,
 			entry.EntryKey, entry.EntryValue,
-			version, true, description, createdBy, now, now,
+			version, true, entry.CheckIDs, description, createdBy, now, now,
 		)
 		if err != nil {
 			return fmt.Errorf("insert baseline entry: %w", err)

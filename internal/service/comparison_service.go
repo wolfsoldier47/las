@@ -155,9 +155,13 @@ func (s *DefaultComparisonService) compareFile(
 
 	// Build expected map from the active baselines. Baselines are global per OS type/version.
 	expected := make(map[string]string)
+	checkIDs := make(map[string]bool)
 	for i := range baselines {
 		b := &baselines[i]
 		expected[b.EntryKey] = b.EntryValue
+		if b.CheckIDs {
+			checkIDs[b.EntryKey] = true
+		}
 	}
 
 	deviations, err := s.deviationRepo.List(ctx, repository.DeviationFilters{
@@ -192,6 +196,11 @@ func (s *DefaultComparisonService) compareFile(
 			continue
 		}
 		if actualValue != expectedValue {
+			// Entries not on the privilege list ignore uid/gid differences: if the
+			// values only differ in those fields, there is no deviation.
+			if !checkIDs[key] && maskIDFields(fileType, actualValue) == maskIDFields(fileType, expectedValue) {
+				continue
+			}
 			if s.isAllowed(allowed, key, actualValue) {
 				result.AllowedDeviations = append(result.AllowedDeviations, models.AllowedDeviationFound{
 					FileType:      fileType,
@@ -286,6 +295,39 @@ func (s *DefaultComparisonService) createIncident(
 		return fmt.Errorf("create incident: %w", err)
 	}
 	return nil
+}
+
+// maskIDFields blanks out the uid/gid fields of an entry value so those fields
+// can be excluded from comparison. Passwd values ("password:uid:gid:gecos:home:shell")
+// have fields 1 (uid) and 2 (gid) masked; group values ("password:gid:members")
+// have field 1 (gid) masked — members are always compared, even for privileged
+// entries. Values with an unexpected field count are returned unmasked so they
+// fall back to full-string comparison.
+func maskIDFields(fileType models.FileType, value string) string {
+	fields := strings.Split(value, ":")
+
+	var maskIdx []int
+	switch fileType {
+	case models.FileTypePasswd:
+		if len(fields) != 6 {
+			return value
+		}
+		maskIdx = []int{1, 2}
+	case models.FileTypeGroup:
+		if len(fields) < 2 {
+			return value
+		}
+		maskIdx = []int{1}
+	default:
+		return value
+	}
+
+	for _, i := range maskIdx {
+		if i < len(fields) {
+			fields[i] = ""
+		}
+	}
+	return strings.Join(fields, ":")
 }
 
 // parseMajorVersion extracts the leading integer from an OS version string such as "7.1" or "8.10".

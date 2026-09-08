@@ -509,3 +509,260 @@ func TestCompareScanResult_NoBaselineForMajorVersion(t *testing.T) {
 		t.Errorf("expected baseline_version_at_scan = 8, got %v", result.BaselineVersionAtScan)
 	}
 }
+
+// TestCompareScanResult_UIDIgnoredByDefault verifies that uid/gid drift on a
+// non-privileged entry produces no deviation, while a change to any other
+// field on the same entry still does.
+func TestCompareScanResult_UIDIgnoredByDefault(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	scanResultID := uuid.New()
+	scanJobID := uuid.New()
+
+	host := &models.Host{
+		ID:        hostID,
+		Hostname:  "host001.example.com",
+		OSType:    models.OSTypeLinux,
+		OSVersion: "7.1",
+	}
+
+	scanRepo := newMemScanRepo()
+	scanRepo.CreateScanResult(ctx, &models.ScanResult{
+		ID:        scanResultID,
+		ScanJobID: scanJobID,
+		HostID:    hostID,
+	})
+
+	snapshotRepo := newMemSnapshotRepo()
+	snapshotRepo.Create(ctx, &models.HostFileSnapshot{
+		ID:           uuid.New(),
+		ScanResultID: scanResultID,
+		HostID:       hostID,
+		ScanJobID:    scanJobID,
+		FileType:     models.FileTypePasswd,
+		// root: only uid/gid drift. admin: gecos changed.
+		RawContent: "root:x:1:1:root:/root:/bin/bash\nadmin:x:1000:1000:admin user:/home/admin:/bin/bash",
+	})
+
+	baselineRepo := &memBaselineRepo{
+		baselines: []models.MasterBaseline{
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "root",
+				EntryValue: "x:0:0:root:/root:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+			},
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "admin",
+				EntryValue: "x:1000:1000:admin:/home/admin:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+			},
+		},
+	}
+
+	incidentRepo := &memIncidentRepo{}
+	comparison := NewDefaultComparisonService(
+		scanRepo,
+		snapshotRepo,
+		newMemHostRepo(host),
+		baselineRepo,
+		&memDeviationRepo{},
+		incidentRepo,
+	)
+
+	if err := comparison.CompareScanResult(ctx, scanResultID); err != nil {
+		t.Fatalf("CompareScanResult failed: %v", err)
+	}
+
+	if len(incidentRepo.incidents) != 1 {
+		t.Fatalf("expected 1 incident (admin gecos only), got %d: %+v", len(incidentRepo.incidents), incidentRepo.incidents)
+	}
+	if incidentRepo.incidents[0].EntryKey != "admin" {
+		t.Errorf("expected incident for admin, got %s", incidentRepo.incidents[0].EntryKey)
+	}
+
+	result, _ := scanRepo.GetScanResult(ctx, scanResultID)
+	if result.Status != models.ScanResultStatusDeviationFound {
+		t.Errorf("expected status deviation_found, got %s", result.Status)
+	}
+}
+
+// TestCompareScanResult_UIDCheckedWhenPrivileged verifies that a privileged
+// entry (on the privilege list) gets its uid/gid compared.
+func TestCompareScanResult_UIDCheckedWhenPrivileged(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	scanResultID := uuid.New()
+	scanJobID := uuid.New()
+
+	host := &models.Host{
+		ID:        hostID,
+		Hostname:  "host001.example.com",
+		OSType:    models.OSTypeLinux,
+		OSVersion: "7.1",
+	}
+
+	scanRepo := newMemScanRepo()
+	scanRepo.CreateScanResult(ctx, &models.ScanResult{
+		ID:        scanResultID,
+		ScanJobID: scanJobID,
+		HostID:    hostID,
+	})
+
+	snapshotRepo := newMemSnapshotRepo()
+	snapshotRepo.Create(ctx, &models.HostFileSnapshot{
+		ID:           uuid.New(),
+		ScanResultID: scanResultID,
+		HostID:       hostID,
+		ScanJobID:    scanJobID,
+		FileType:     models.FileTypePasswd,
+		RawContent:   "root:x:1:1:root:/root:/bin/bash",
+	})
+
+	baselineRepo := &memBaselineRepo{
+		baselines: []models.MasterBaseline{
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "root",
+				EntryValue: "x:0:0:root:/root:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+				CheckIDs:   true, // privilege list
+			},
+		},
+	}
+
+	incidentRepo := &memIncidentRepo{}
+	comparison := NewDefaultComparisonService(
+		scanRepo,
+		snapshotRepo,
+		newMemHostRepo(host),
+		baselineRepo,
+		&memDeviationRepo{},
+		incidentRepo,
+	)
+
+	if err := comparison.CompareScanResult(ctx, scanResultID); err != nil {
+		t.Fatalf("CompareScanResult failed: %v", err)
+	}
+
+	if len(incidentRepo.incidents) != 1 {
+		t.Fatalf("expected 1 incident for privileged uid drift, got %d", len(incidentRepo.incidents))
+	}
+	if incidentRepo.incidents[0].EntryKey != "root" {
+		t.Errorf("expected incident for root, got %s", incidentRepo.incidents[0].EntryKey)
+	}
+}
+
+// TestCompareScanResult_GroupGIDIgnoredMembersChecked verifies the group rules:
+// gid drift is ignored by default, but member changes are always deviations.
+func TestCompareScanResult_GroupGIDIgnoredMembersChecked(t *testing.T) {
+	run := func(t *testing.T, actual string, checkIDs bool) []models.Incident {
+		ctx := context.Background()
+		hostID := uuid.New()
+		scanResultID := uuid.New()
+		scanJobID := uuid.New()
+
+		host := &models.Host{
+			ID:        hostID,
+			Hostname:  "host001.example.com",
+			OSType:    models.OSTypeLinux,
+			OSVersion: "7.1",
+		}
+
+		scanRepo := newMemScanRepo()
+		scanRepo.CreateScanResult(ctx, &models.ScanResult{
+			ID:        scanResultID,
+			ScanJobID: scanJobID,
+			HostID:    hostID,
+		})
+
+		snapshotRepo := newMemSnapshotRepo()
+		snapshotRepo.Create(ctx, &models.HostFileSnapshot{
+			ID:           uuid.New(),
+			ScanResultID: scanResultID,
+			HostID:       hostID,
+			ScanJobID:    scanJobID,
+			FileType:     models.FileTypeGroup,
+			RawContent:   actual,
+		})
+
+		baselineRepo := &memBaselineRepo{
+			baselines: []models.MasterBaseline{
+				{
+					ID:         uuid.New(),
+					OSType:     models.OSTypeLinux,
+					FileType:   models.FileTypeGroup,
+					EntryKey:   "wheel",
+					EntryValue: "x:10:alice,bob",
+					Version:    7,
+					IsActive:   true,
+					CheckIDs:   checkIDs,
+				},
+			},
+		}
+
+		incidentRepo := &memIncidentRepo{}
+		comparison := NewDefaultComparisonService(
+			scanRepo,
+			snapshotRepo,
+			newMemHostRepo(host),
+			baselineRepo,
+			&memDeviationRepo{},
+			incidentRepo,
+		)
+
+		if err := comparison.CompareScanResult(ctx, scanResultID); err != nil {
+			t.Fatalf("CompareScanResult failed: %v", err)
+		}
+		return incidentRepo.incidents
+	}
+
+	t.Run("gid drift ignored by default", func(t *testing.T) {
+		if incidents := run(t, "wheel:x:11:alice,bob", false); len(incidents) != 0 {
+			t.Fatalf("expected 0 incidents for gid drift, got %d: %+v", len(incidents), incidents)
+		}
+	})
+
+	t.Run("gid drift flagged when privileged", func(t *testing.T) {
+		if incidents := run(t, "wheel:x:11:alice,bob", true); len(incidents) != 1 {
+			t.Fatalf("expected 1 incident for privileged gid drift, got %d", len(incidents))
+		}
+	})
+
+	t.Run("member change always flagged", func(t *testing.T) {
+		if incidents := run(t, "wheel:x:10:alice,carol", false); len(incidents) != 1 {
+			t.Fatalf("expected 1 incident for member change, got %d", len(incidents))
+		}
+	})
+}
+
+func TestMaskIDFields(t *testing.T) {
+	tests := []struct {
+		fileType models.FileType
+		value    string
+		want     string
+	}{
+		{models.FileTypePasswd, "x:0:0:root:/root:/bin/bash", "x:::root:/root:/bin/bash"},
+		{models.FileTypePasswd, "x:1:1:root:/root:/bin/bash", "x:::root:/root:/bin/bash"}, // masked equal to above
+		{models.FileTypePasswd, "x:0:0:toor:/root:/bin/bash", "x:::toor:/root:/bin/bash"}, // gecos survives masking
+		{models.FileTypePasswd, "x:0:0:malformed", "x:0:0:malformed"},                    // unexpected field count passthrough
+		{models.FileTypeGroup, "x:10:alice,bob", "x::alice,bob"},
+		{models.FileTypeGroup, "x:10", "x:"}, // members empty (already normalized before comparison)
+		{models.FileTypeGroup, "x", "x"},      // unparseable passthrough
+	}
+	for _, tc := range tests {
+		if got := maskIDFields(tc.fileType, tc.value); got != tc.want {
+			t.Errorf("maskIDFields(%s, %q) = %q, want %q", tc.fileType, tc.value, got, tc.want)
+		}
+	}
+}

@@ -18,6 +18,7 @@ type MasterBaseline struct {
 	EntryValue  string     `db:"entry_value" json:"entry_value" validate:"required"`
 	Version     int        `db:"version" json:"version"`
 	IsActive    bool       `db:"is_active" json:"is_active"`
+	CheckIDs    bool       `db:"check_ids" json:"check_ids"` // privilege list: compare uid/gid for this entry
 	Description string     `db:"description" json:"description,omitempty"`
 	CreatedBy   string     `db:"created_by" json:"created_by,omitempty"`
 	CreatedAt   time.Time  `db:"created_at" json:"created_at"`

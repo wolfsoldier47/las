@@ -37,6 +37,7 @@ type CreateBaselineRequest struct {
 	EntryKey    string          `json:"entry_key" binding:"required"`
 	EntryValue  string          `json:"entry_value" binding:"required"`
 	Version     int             `json:"version" binding:"required"`
+	CheckIDs    bool            `json:"check_ids"`
 	Description string          `json:"description"`
 	CreatedBy   string          `json:"created_by"`
 }
@@ -48,6 +49,7 @@ type UpdateBaselineRequest struct {
 	EntryKey     string          `json:"entry_key" binding:"required"`
 	EntryValue   string          `json:"entry_value" binding:"required"`
 	Version      int             `json:"version" binding:"required"`
+	CheckIDs     bool            `json:"check_ids"`
 	Description  string          `json:"description"`
 	ChangeReason string          `json:"change_reason"`
 	ChangedBy    string          `json:"changed_by"`
@@ -55,12 +57,13 @@ type UpdateBaselineRequest struct {
 
 // UploadMasterFileRequest is the input for pasting a full /etc/passwd or /etc/group file.
 type UploadMasterFileRequest struct {
-	OSType      models.OSType   `json:"os_type" binding:"required"`
-	FileType    models.FileType `json:"file_type" binding:"required"`
-	Version     int             `json:"version" binding:"required"`
-	Content     string          `json:"content" binding:"required"`
-	Description string          `json:"description"`
-	CreatedBy   string          `json:"created_by"`
+	OSType        models.OSType   `json:"os_type" binding:"required"`
+	FileType      models.FileType `json:"file_type" binding:"required"`
+	Version       int             `json:"version" binding:"required"`
+	Content       string          `json:"content" binding:"required"`
+	PrivilegeList string          `json:"privilege_list"` // entry keys whose uid/gid must match the baseline
+	Description   string          `json:"description"`
+	CreatedBy     string          `json:"created_by"`
 }
 
 // DefaultBaselineService is the default implementation of BaselineService.
@@ -89,6 +92,7 @@ func (s *DefaultBaselineService) Create(ctx context.Context, req CreateBaselineR
 		EntryValue:  req.EntryValue,
 		Version:     req.Version,
 		IsActive:    true,
+		CheckIDs:    req.CheckIDs,
 		Description: req.Description,
 		CreatedBy:   req.CreatedBy,
 		CreatedAt:   now,
@@ -136,6 +140,7 @@ func (s *DefaultBaselineService) Update(ctx context.Context, id uuid.UUID, req U
 	baseline.EntryKey = req.EntryKey
 	baseline.EntryValue = req.EntryValue
 	baseline.Version = req.Version
+	baseline.CheckIDs = req.CheckIDs
 	baseline.Description = req.Description
 	baseline.UpdatedAt = time.Now().UTC()
 
@@ -173,7 +178,7 @@ func (s *DefaultBaselineService) UploadMasterFile(ctx context.Context, req Uploa
 		return 0, err
 	}
 
-	entries, err := parseMasterFileContent(req.FileType, req.Content)
+	entries, err := parseMasterFileContent(req.FileType, req.Content, parsePrivilegeList(req.PrivilegeList))
 	if err != nil {
 		return 0, fmt.Errorf("parse master file: %w", err)
 	}
@@ -272,7 +277,28 @@ func (s *DefaultBaselineService) OSVersions() map[string][]int {
 	return versions
 }
 
-func parseMasterFileContent(fileType models.FileType, content string) ([]repository.BaselineEntryInput, error) {
+// parsePrivilegeList parses the privilege list textarea into a key set.
+// Keys may be separated by newlines, commas, or whitespace; blank lines and
+// # comments are ignored. Keys name entries whose uid/gid are compared
+// against the baseline; all other entries ignore uid/gid differences.
+func parsePrivilegeList(content string) map[string]bool {
+	set := make(map[string]bool)
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		for _, key := range strings.Split(line, ",") {
+			key = strings.TrimSpace(key)
+			if key != "" {
+				set[key] = true
+			}
+		}
+	}
+	return set
+}
+
+func parseMasterFileContent(fileType models.FileType, content string, privileged map[string]bool) ([]repository.BaselineEntryInput, error) {
 	var entries []repository.BaselineEntryInput
 	seen := make(map[string]bool)
 
@@ -310,6 +336,7 @@ func parseMasterFileContent(fileType models.FileType, content string) ([]reposit
 		entries = append(entries, repository.BaselineEntryInput{
 			EntryKey:   key,
 			EntryValue: value,
+			CheckIDs:   privileged[key],
 		})
 	}
 

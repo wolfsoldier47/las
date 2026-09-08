@@ -210,5 +210,13 @@ func runManualMigrations() error {
 		return fmt.Errorf("scan result baseline migration failed: %w", err)
 	}
 
+	baselineCheckIDsMigration := `
+		ALTER TABLE master_baselines
+			ADD COLUMN IF NOT EXISTS check_ids BOOLEAN NOT NULL DEFAULT false;
+	`
+	if err := db.Exec(baselineCheckIDsMigration).Error; err != nil {
+		return fmt.Errorf("baseline check_ids migration failed: %w", err)
+	}
+
 	return nil
 }

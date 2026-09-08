@@ -208,15 +208,11 @@ func (h *ScanHandler) ScanCallback(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
-	// Receipt log: confirms the callback reached the handler at all. Every
-	// other log line ([ENVELOPE], callback errors) only appears after this.
-	slog.Info("scan callback received", "bytes", len(body))
-
 	// Try the new envelope format first.
 	// A final summary callback may contain only ansible_job_id + failed_hosts with no hosts.
 	var envelope models.CallbackEnvelope
 	if err := json.Unmarshal(body, &envelope); err == nil {
-		// Some AAP versions key the final failed_hosts summary as "job_id"
+		// failed_hosts summary as "job_id"
 		// instead of "ansible_job_id". Only fall back to it for a summary
 		// (failed_hosts present, no hosts) so legacy host payloads keyed by
 		// job_id keep flowing through the legacy path below.
@@ -227,7 +223,7 @@ func (h *ScanHandler) ScanCallback(c *gin.Context) {
 		if jobIDRaw != nil {
 			jobID := normalizeAnsibleJobID(jobIDRaw)
 			if jobID == "" {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ansible_job_id"})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ansible_j ob_id"})
 				return
 			}
 
