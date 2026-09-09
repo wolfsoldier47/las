@@ -540,8 +540,8 @@ func TestCompareScanResult_UIDIgnoredByDefault(t *testing.T) {
 		HostID:       hostID,
 		ScanJobID:    scanJobID,
 		FileType:     models.FileTypePasswd,
-		// root: only uid/gid drift. admin: gecos changed.
-		RawContent: "root:x:1:1:root:/root:/bin/bash\nadmin:x:1000:1000:admin user:/home/admin:/bin/bash",
+		// root: only uid/gid drift. admin: shell changed.
+		RawContent: "root:x:1:1:root:/root:/bin/bash\nadmin:x:1000:1000:admin user:/home/admin:/sbin/nologin",
 	})
 
 	baselineRepo := &memBaselineRepo{
@@ -746,23 +746,104 @@ func TestCompareScanResult_GroupGIDIgnoredMembersChecked(t *testing.T) {
 	})
 }
 
-func TestMaskIDFields(t *testing.T) {
+func TestMaskIgnoredFields(t *testing.T) {
 	tests := []struct {
 		fileType models.FileType
 		value    string
+		keepIDs  bool
 		want     string
 	}{
-		{models.FileTypePasswd, "x:0:0:root:/root:/bin/bash", "x:::root:/root:/bin/bash"},
-		{models.FileTypePasswd, "x:1:1:root:/root:/bin/bash", "x:::root:/root:/bin/bash"}, // masked equal to above
-		{models.FileTypePasswd, "x:0:0:toor:/root:/bin/bash", "x:::toor:/root:/bin/bash"}, // gecos survives masking
-		{models.FileTypePasswd, "x:0:0:malformed", "x:0:0:malformed"},                    // unexpected field count passthrough
-		{models.FileTypeGroup, "x:10:alice,bob", "x::alice,bob"},
-		{models.FileTypeGroup, "x:10", "x:"}, // members empty (already normalized before comparison)
-		{models.FileTypeGroup, "x", "x"},      // unparseable passthrough
+		{models.FileTypePasswd, "x:0:0:root:/root:/bin/bash", false, "x::::/root:/bin/bash"},
+		{models.FileTypePasswd, "x:1:1:root:/root:/bin/bash", false, "x::::/root:/bin/bash"},       // masked equal to above
+		{models.FileTypePasswd, "x:0:0:Root Admin:/root:/bin/bash", false, "x::::/root:/bin/bash"}, // gecos ignored
+		{models.FileTypePasswd, "x:0:0:toor:/root:/bin/zsh", false, "x::::/root:/bin/zsh"},         // home/shell survive masking
+		{models.FileTypePasswd, "x:0:0:malformed", false, "x:0:0:malformed"},                      // unexpected field count passthrough
+		{models.FileTypePasswd, "x:0:0:root:/root:/bin/bash", true, "x:0:0::/root:/bin/bash"},      // privileged: uid/gid kept, gecos still ignored
+		{models.FileTypeGroup, "x:10:alice,bob", false, "x::alice,bob"},
+		{models.FileTypeGroup, "x:10", false, "x:"},          // members empty (already normalized before comparison)
+		{models.FileTypeGroup, "x", false, "x"},              // unparseable passthrough
+		{models.FileTypeGroup, "x:10:alice,bob", true, "x:10:alice,bob"}, // privileged: nothing masked
 	}
 	for _, tc := range tests {
-		if got := maskIDFields(tc.fileType, tc.value); got != tc.want {
-			t.Errorf("maskIDFields(%s, %q) = %q, want %q", tc.fileType, tc.value, got, tc.want)
+		if got := maskIgnoredFields(tc.fileType, tc.value, tc.keepIDs); got != tc.want {
+			t.Errorf("maskIgnoredFields(%s, %q, keepIDs=%v) = %q, want %q", tc.fileType, tc.value, tc.keepIDs, got, tc.want)
 		}
 	}
+}
+
+// TestCompareScanResult_GecosIgnored verifies that a gecos-only change on a
+// passwd entry never produces a deviation, even for privileged entries.
+func TestCompareScanResult_GecosIgnored(t *testing.T) {
+	run := func(t *testing.T, checkIDs bool) []models.Incident {
+		ctx := context.Background()
+		hostID := uuid.New()
+		scanResultID := uuid.New()
+		scanJobID := uuid.New()
+
+		host := &models.Host{
+			ID:        hostID,
+			Hostname:  "host001.example.com",
+			OSType:    models.OSTypeLinux,
+			OSVersion: "7.1",
+		}
+
+		scanRepo := newMemScanRepo()
+		scanRepo.CreateScanResult(ctx, &models.ScanResult{
+			ID:        scanResultID,
+			ScanJobID: scanJobID,
+			HostID:    hostID,
+		})
+
+		snapshotRepo := newMemSnapshotRepo()
+		snapshotRepo.Create(ctx, &models.HostFileSnapshot{
+			ID:           uuid.New(),
+			ScanResultID: scanResultID,
+			HostID:       hostID,
+			ScanJobID:    scanJobID,
+			FileType:     models.FileTypePasswd,
+			RawContent:   "root:x:0:0:Super User,,:/root:/bin/bash",
+		})
+
+		baselineRepo := &memBaselineRepo{
+			baselines: []models.MasterBaseline{
+				{
+					ID:         uuid.New(),
+					OSType:     models.OSTypeLinux,
+					FileType:   models.FileTypePasswd,
+					EntryKey:   "root",
+					EntryValue: "x:0:0:root:/root:/bin/bash",
+					Version:    7,
+					IsActive:   true,
+					CheckIDs:   checkIDs,
+				},
+			},
+		}
+
+		incidentRepo := &memIncidentRepo{}
+		comparison := NewDefaultComparisonService(
+			scanRepo,
+			snapshotRepo,
+			newMemHostRepo(host),
+			baselineRepo,
+			&memDeviationRepo{},
+			incidentRepo,
+		)
+
+		if err := comparison.CompareScanResult(ctx, scanResultID); err != nil {
+			t.Fatalf("CompareScanResult failed: %v", err)
+		}
+		return incidentRepo.incidents
+	}
+
+	t.Run("gecos ignored by default", func(t *testing.T) {
+		if incidents := run(t, false); len(incidents) != 0 {
+			t.Fatalf("expected 0 incidents for gecos change, got %d: %+v", len(incidents), incidents)
+		}
+	})
+
+	t.Run("gecos ignored for privileged entry", func(t *testing.T) {
+		if incidents := run(t, true); len(incidents) != 0 {
+			t.Fatalf("expected 0 incidents for gecos change on privileged entry, got %d", len(incidents))
+		}
+	})
 }

@@ -196,9 +196,10 @@ func (s *DefaultComparisonService) compareFile(
 			continue
 		}
 		if actualValue != expectedValue {
-			// Entries not on the privilege list ignore uid/gid differences: if the
-			// values only differ in those fields, there is no deviation.
-			if !checkIDs[key] && maskIDFields(fileType, actualValue) == maskIDFields(fileType, expectedValue) {
+			// gecos is always ignored; uid/gid are ignored for entries not on
+			// the privilege list. If the values only differ in those fields,
+			// there is no deviation.
+			if maskIgnoredFields(fileType, actualValue, checkIDs[key]) == maskIgnoredFields(fileType, expectedValue, checkIDs[key]) {
 				continue
 			}
 			if s.isAllowed(allowed, key, actualValue) {
@@ -297,13 +298,14 @@ func (s *DefaultComparisonService) createIncident(
 	return nil
 }
 
-// maskIDFields blanks out the uid/gid fields of an entry value so those fields
-// can be excluded from comparison. Passwd values ("password:uid:gid:gecos:home:shell")
-// have fields 1 (uid) and 2 (gid) masked; group values ("password:gid:members")
-// have field 1 (gid) masked — members are always compared, even for privileged
-// entries. Values with an unexpected field count are returned unmasked so they
-// fall back to full-string comparison.
-func maskIDFields(fileType models.FileType, value string) string {
+// maskIgnoredFields blanks out fields excluded from deviation comparison.
+// Passwd values ("password:uid:gid:gecos:home:shell") always have field 3
+// (gecos, a free-text comment) masked; fields 1 (uid) and 2 (gid) are masked
+// unless keepIDs is set (entries on the privilege list). Group values
+// ("password:gid:members") have field 1 (gid) masked the same way — members
+// are always compared. Values with an unexpected field count are returned
+// unmasked so they fall back to full-string comparison.
+func maskIgnoredFields(fileType models.FileType, value string, keepIDs bool) string {
 	fields := strings.Split(value, ":")
 
 	var maskIdx []int
@@ -312,12 +314,17 @@ func maskIDFields(fileType models.FileType, value string) string {
 		if len(fields) != 6 {
 			return value
 		}
-		maskIdx = []int{1, 2}
+		fields[3] = "" // gecos is a comment — always ignored
+		if !keepIDs {
+			maskIdx = []int{1, 2}
+		}
 	case models.FileTypeGroup:
 		if len(fields) < 2 {
 			return value
 		}
-		maskIdx = []int{1}
+		if !keepIDs {
+			maskIdx = []int{1}
+		}
 	default:
 		return value
 	}
