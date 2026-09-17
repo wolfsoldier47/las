@@ -70,6 +70,7 @@ func InitError() error {
 func migrate() error {
 	if err := db.AutoMigrate(
 		&models.Host{},
+		&models.UserAccess{},
 		&models.MasterBaseline{},
 		&models.MasterBaselineVersion{},
 		&models.AllowedDeviation{},

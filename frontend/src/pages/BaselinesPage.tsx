@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/client'
+import { isAdmin } from '../auth/permission'
 
 interface BaselineVersion {
   os_type: string
@@ -183,6 +184,7 @@ export default function BaselinesPage() {
   }
 
   const totalPages = Math.max(1, Math.ceil(totalVersions / pageSize))
+  const admin = isAdmin()
 
   return (
     <div className="flex flex-col gap-6">
@@ -193,6 +195,7 @@ export default function BaselinesPage() {
             Paste the full contents of /etc/passwd or /etc/group. The selected OS major version is used as the baseline version; only one baseline per OS major version can be active at a time.
           </div>
         </div>
+        {admin ? (
         <form onSubmit={handleSubmit} className="p-5 grid grid-cols-2 gap-4">
           {error && <div className="col-span-2 text-xs text-red-500">{error}</div>}
           {success && <div className="col-span-2 text-xs text-green-500">{success}</div>}
@@ -280,6 +283,11 @@ export default function BaselinesPage() {
             </button>
           </div>
         </form>
+        ) : (
+          <div className="p-5 text-xs text-muted-foreground">
+            Read-only access — only administrators can upload master files.
+          </div>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -357,7 +365,7 @@ export default function BaselinesPage() {
                       >
                         View
                       </button>
-                      {!v.is_active && (
+                      {admin && !v.is_active && (
                         <button
                           onClick={() => activateVersion(v)}
                           className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
@@ -365,7 +373,7 @@ export default function BaselinesPage() {
                           Activate
                         </button>
                       )}
-                      {v.is_active && (
+                      {admin && v.is_active && (
                         <button
                           onClick={() => deactivateScope(v)}
                           className="px-2 py-1 bg-secondary border border-[#3f3f46] text-foreground rounded text-xs hover:bg-[#3f3f46] transition-colors"

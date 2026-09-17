@@ -125,7 +125,7 @@ func main() {
 		}
 	}
 
-	authHandler := handler.NewAuthHandler(tokenMaker, ldapClient, cfg)
+	authHandler := handler.NewAuthHandler(tokenMaker, ldapClient, cfg, repository.NewPgAccessRepository(db))
 
 	healthHandler := handler.NewHealthHandler(db, aapClient, aapSolarisClient)
 	r := router.New(

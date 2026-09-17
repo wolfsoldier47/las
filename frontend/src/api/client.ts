@@ -2,6 +2,7 @@ import axios from 'axios'
 
 const TOKEN_KEY = 'ulas_token'
 const USERNAME_KEY = 'ulas_username'
+const PERMISSION_KEY = 'ulas_permission'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -24,6 +25,7 @@ api.interceptors.response.use(
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       localStorage.removeItem(TOKEN_KEY)
       localStorage.removeItem(USERNAME_KEY)
+      localStorage.removeItem(PERMISSION_KEY)
       if (window.location.pathname !== '/login') {
         window.location.href = '/login'
       }
@@ -35,6 +37,7 @@ api.interceptors.response.use(
 export function clearStoredAuth(): void {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(USERNAME_KEY)
+  localStorage.removeItem(PERMISSION_KEY)
 }
 
 export async function downloadScanReport(scanId: string): Promise<void> {

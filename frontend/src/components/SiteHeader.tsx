@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { getPermission } from '../auth/permission'
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
@@ -14,6 +15,7 @@ const pageTitles: Record<string, string> = {
 export function SiteHeader() {
   const location = useLocation()
   const title = pageTitles[location.pathname] || 'Dashboard'
+  const readOnly = getPermission() === 'read'
 
   return (
     <div className="h-14 border-b border-border flex items-center justify-between px-6 bg-background flex-shrink-0">
@@ -25,6 +27,11 @@ export function SiteHeader() {
         </div>
       </div>
       <div className="flex items-center gap-3">
+        {readOnly && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-muted text-muted-foreground border-border">
+            Read-only
+          </span>
+        )}
         <div className="w-9 h-9 rounded-lg border border-border flex items-center justify-center cursor-pointer text-muted-foreground hover:border-primary hover:text-primary transition-all duration-200 relative">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>

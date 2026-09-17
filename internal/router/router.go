@@ -57,55 +57,66 @@ func New(
 	// OS versions are public so the upload form can populate its dropdown before login.
 	r.GET("/api/os-versions", baselines.ListOSVersions)
 
-	// Protected API routes.
-	api := r.Group("/api").Use(handler.AuthMiddleware(tokenMaker))
+	// Protected API routes — any authenticated user (read or admin) can view.
+	api := r.Group("/api")
+	api.Use(handler.AuthMiddleware(tokenMaker))
 	{
 		api.GET("/me", auth.GetCurrentUser)
 
-		api.POST("/hosts", hosts.CreateHost)
 		api.GET("/hosts", hosts.ListHosts)
 		api.GET("/hosts/:id", hosts.GetHost)
-		api.PUT("/hosts/:id", hosts.UpdateHost)
-		api.DELETE("/hosts/:id", hosts.DeleteHost)
 
-		api.POST("/baselines", baselines.CreateBaseline)
 		api.GET("/baselines", baselines.ListBaselines)
 		api.GET("/baselines/:id", baselines.GetBaseline)
-		api.PUT("/baselines/:id", baselines.UpdateBaseline)
-		api.DELETE("/baselines/:id", baselines.DeleteBaseline)
-		api.POST("/baselines/upload", baselines.UploadMasterFile)
 		api.GET("/baselines/versions", baselines.ListBaselineVersions)
-		api.POST("/baselines/versions/activate", baselines.ActivateBaselineVersion)
-		api.POST("/baselines/versions/deactivate", baselines.DeactivateBaselineScope)
 
-		api.POST("/deviations", deviations.CreateDeviation)
 		api.GET("/deviations", deviations.ListDeviations)
 		api.GET("/deviations/:id", deviations.GetDeviation)
-		api.PUT("/deviations/:id", deviations.UpdateDeviation)
-		api.DELETE("/deviations/:id", deviations.DeleteDeviation)
 
 		api.GET("/scans", scans.ListScans)
-		api.POST("/scans", scans.InitiateScan)
 		api.GET("/scans/:id", scans.GetScan)
 		api.GET("/scans/:id/hosts/:hostId", scans.GetHostResult)
 		api.GET("/scans/:id/report", reports.DownloadScanReport)
 
 		api.GET("/incidents", incidents.ListIncidents)
 		api.GET("/incidents/:id", incidents.GetIncident)
-		api.POST("/incidents/:id/servicenow", incidents.OpenServiceNowTicket)
-		api.POST("/incidents/bulk-servicenow", incidents.BulkOpenServiceNowTickets)
-		api.PUT("/incidents/:id/status", incidents.UpdateIncidentStatus)
 
 		api.GET("/snapshots/:hostId/:fileType/history", snapshots.GetHistory)
 		api.GET("/snapshots/:hostId/:fileType/changes", snapshots.GetChanges)
 		api.GET("/snapshots/detail/:id", snapshots.GetSnapshot)
 
 		api.GET("/scan-schedules", scanSchedules.ListScanSchedules)
-		api.POST("/scan-schedules", scanSchedules.CreateScanSchedule)
 		api.GET("/scan-schedules/:id", scanSchedules.GetScanSchedule)
-		api.PUT("/scan-schedules/:id", scanSchedules.UpdateScanSchedule)
-		api.DELETE("/scan-schedules/:id", scanSchedules.DeleteScanSchedule)
 		api.GET("/scan-schedules/:id/runs", scanSchedules.ListScanScheduleRuns)
+	}
+
+	// Admin-only routes — everything that mutates state or triggers actions.
+	admin := api.Group("").Use(handler.AdminMiddleware())
+	{
+		admin.POST("/hosts", hosts.CreateHost)
+		admin.PUT("/hosts/:id", hosts.UpdateHost)
+		admin.DELETE("/hosts/:id", hosts.DeleteHost)
+
+		admin.POST("/baselines", baselines.CreateBaseline)
+		admin.PUT("/baselines/:id", baselines.UpdateBaseline)
+		admin.DELETE("/baselines/:id", baselines.DeleteBaseline)
+		admin.POST("/baselines/upload", baselines.UploadMasterFile)
+		admin.POST("/baselines/versions/activate", baselines.ActivateBaselineVersion)
+		admin.POST("/baselines/versions/deactivate", baselines.DeactivateBaselineScope)
+
+		admin.POST("/deviations", deviations.CreateDeviation)
+		admin.PUT("/deviations/:id", deviations.UpdateDeviation)
+		admin.DELETE("/deviations/:id", deviations.DeleteDeviation)
+
+		admin.POST("/scans", scans.InitiateScan)
+
+		admin.POST("/incidents/:id/servicenow", incidents.OpenServiceNowTicket)
+		admin.POST("/incidents/bulk-servicenow", incidents.BulkOpenServiceNowTickets)
+		admin.PUT("/incidents/:id/status", incidents.UpdateIncidentStatus)
+
+		admin.POST("/scan-schedules", scanSchedules.CreateScanSchedule)
+		admin.PUT("/scan-schedules/:id", scanSchedules.UpdateScanSchedule)
+		admin.DELETE("/scan-schedules/:id", scanSchedules.DeleteScanSchedule)
 	}
 
 	return r

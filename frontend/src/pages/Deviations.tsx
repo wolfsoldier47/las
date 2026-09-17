@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/client'
+import { isAdmin } from '../auth/permission'
 
 interface Deviation {
   id: string
@@ -170,6 +171,7 @@ export default function Deviations() {
   }
 
   const totalPages = Math.max(1, Math.ceil(totalDeviations / pageSize))
+  const admin = isAdmin()
 
   return (
     <div className="flex flex-col gap-6">
@@ -201,6 +203,7 @@ export default function Deviations() {
           <div className="font-semibold text-sm text-foreground">Register Allowed Deviation</div>
           <div className="text-xs text-muted-foreground mt-0.5">Pre-approve a deviation for a specific host and file</div>
         </div>
+        {admin ? (
         <form onSubmit={handleSubmit} className="p-5 grid grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-medium text-muted-foreground mb-1">Host</label>
@@ -266,6 +269,11 @@ export default function Deviations() {
             </button>
           </div>
         </form>
+        ) : (
+          <div className="p-5 text-xs text-muted-foreground">
+            Read-only access — only administrators can register or manage deviations.
+          </div>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -309,7 +317,7 @@ export default function Deviations() {
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Entry Line</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Justification</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Approved By</th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Actions</th>
+                {admin && <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -320,6 +328,7 @@ export default function Deviations() {
                   <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{buildEntryLine(d)}</td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{d.justification}</td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{d.approved_by}</td>
+                  {admin && (
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
                       <button
@@ -346,6 +355,7 @@ export default function Deviations() {
                       </button>
                     </div>
                   </td>
+                  )}
                 </tr>
               ))}
             </tbody>

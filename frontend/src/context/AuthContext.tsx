@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import api from '../api/client'
+import { getPermission, PERMISSION_STORAGE_KEY } from '../auth/permission'
 
 const TOKEN_KEY = 'ulas_token'
 const USERNAME_KEY = 'ulas_username'
@@ -54,12 +55,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((res) => {
         const username: string = res.data.username || storedUsername || ''
         localStorage.setItem(USERNAME_KEY, username)
+        if (res.data.permission) {
+          localStorage.setItem(PERMISSION_STORAGE_KEY, res.data.permission)
+        }
         setUser({ token, username, info: loadUserInfo() })
       })
       .catch(() => {
         localStorage.removeItem(TOKEN_KEY)
         localStorage.removeItem(USERNAME_KEY)
         localStorage.removeItem(USER_INFO_KEY)
+        localStorage.removeItem(PERMISSION_STORAGE_KEY)
         setUser(null)
       })
       .finally(() => {
@@ -80,6 +85,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(TOKEN_KEY, accessToken)
       localStorage.setItem(USERNAME_KEY, returnedUsername)
       localStorage.setItem(USER_INFO_KEY, JSON.stringify(userInfo))
+      const permission = res.data.permission || getPermission()
+      if (permission) {
+        localStorage.setItem(PERMISSION_STORAGE_KEY, permission)
+      }
       setUser({ token: accessToken, username: returnedUsername, info: userInfo })
     } catch (err: any) {
       const message = err.response?.data?.error || err.message || 'Login failed'
@@ -92,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USERNAME_KEY)
     localStorage.removeItem(USER_INFO_KEY)
+    localStorage.removeItem(PERMISSION_STORAGE_KEY)
     setUser(null)
     window.location.href = '/login'
   }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api, { downloadScanReport } from '../api/client'
+import { isAdmin } from '../auth/permission'
 
 interface BaselineVersion {
   host_id?: string
@@ -112,6 +113,7 @@ export default function ScanHistoryPage() {
   }, [page, pageSize, onlyDeviations, search])
 
   const aapLive = aapHealth?.aap_status === 'ok'
+  const admin = isAdmin()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -144,6 +146,7 @@ export default function ScanHistoryPage() {
           <div className="font-semibold text-sm text-foreground">Trigger Scan</div>
           <div className="text-xs text-muted-foreground mt-0.5">Launch an Ansible scan via AAP using the configured job template</div>
         </div>
+        {admin ? (
         <form onSubmit={handleSubmit} className="p-5 grid grid-cols-2 gap-4">
           {error && <div className="col-span-2 text-xs text-red-500">{error}</div>}
           <div>
@@ -187,6 +190,11 @@ export default function ScanHistoryPage() {
             <AAPStatusBadge health={aapHealth} loading={aapLoading} />
           </div>
         </form>
+        ) : (
+          <div className="p-5 text-xs text-muted-foreground">
+            Read-only access — only administrators can trigger scans.
+          </div>
+        )}
 
         <div className="px-5 pb-5">
           <div className="text-xs font-medium text-muted-foreground mb-2">Selected Master Files</div>

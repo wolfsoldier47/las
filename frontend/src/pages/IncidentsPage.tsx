@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/client'
+import { isAdmin } from '../auth/permission'
 
 interface Incident {
   id: string
@@ -129,6 +130,7 @@ export default function IncidentsPage() {
   ) || []
 
   const totalPages = Math.max(1, Math.ceil(totalScans / pageSize))
+  const admin = isAdmin()
 
   return (
     <div className="flex flex-col gap-6">
@@ -236,6 +238,11 @@ export default function IncidentsPage() {
             <div className="flex items-center gap-2">
               {ticketError && <span className="text-xs text-red-500">{ticketError}</span>}
               {ticketSuccess && <span className="text-xs text-green-500">{ticketSuccess}</span>}
+              {!admin && (
+                <span className="text-xs text-muted-foreground">
+                  Read-only access — only administrators can open ServiceNow tickets.
+                </span>
+              )}
             </div>
           </div>
           {failingHosts.length === 0 ? (
@@ -261,12 +268,16 @@ export default function IncidentsPage() {
                         <td className="px-5 py-3 text-right text-red-500 text-xs font-medium">{result.deviations_found}</td>
                         <td className="px-5 py-3">
                           {openIncidents.length > 0 ? (
-                            <button
-                              onClick={() => openHostTickets(result)}
-                              className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
-                            >
-                              Open Host Ticket
-                            </button>
+                            admin ? (
+                              <button
+                                onClick={() => openHostTickets(result)}
+                                className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
+                              >
+                                Open Host Ticket
+                              </button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )
                           ) : (
                             <span className="text-xs text-muted-foreground">All tickets opened</span>
                           )}
@@ -290,7 +301,7 @@ export default function IncidentsPage() {
                   <div className="font-semibold text-sm text-foreground">Incidents for {result.hostname}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">{result.incidents.length} incident(s)</div>
                 </div>
-                {result.incidents.some((i) => !i.service_now_ticket_opened) && (
+                {admin && result.incidents.some((i) => !i.service_now_ticket_opened) && (
                   <button
                     onClick={() => openHostTickets(result)}
                     className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import api from '../api/client'
+import { isAdmin } from '../auth/permission'
 
 interface ScanSchedule {
   id: string
@@ -54,6 +55,7 @@ export default function SchedulesPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [runs, setRuns] = useState<Record<string, ScanScheduleRun[]>>({})
   const [runsLoading, setRunsLoading] = useState<Record<string, boolean>>({})
+  const admin = isAdmin()
 
   const fetchSchedules = () => {
     setLoading(true)
@@ -142,17 +144,21 @@ export default function SchedulesPage() {
             Create recurring scans that run daily, weekly, or monthly.
           </div>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
-        >
-          + New Schedule
-        </button>
+        {admin ? (
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
+          >
+            + New Schedule
+          </button>
+        ) : (
+          <span className="text-xs text-muted-foreground">Read-only access</span>
+        )}
       </div>
 
       {error && <div className="text-xs text-red-500">{error}</div>}
 
-      {showForm && (
+      {admin && showForm && (
         <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-4">
           <div className="font-semibold text-sm text-foreground">New Schedule</div>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -253,7 +259,7 @@ export default function SchedulesPage() {
               ) : schedules.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground text-sm">
-                    No schedules yet. Click <strong>New Schedule</strong> to create one.
+                    No schedules yet.{admin && <> Click <strong>New Schedule</strong> to create one.</>}
                   </td>
                 </tr>
               ) : (
@@ -276,29 +282,45 @@ export default function SchedulesPage() {
                       <td className="px-5 py-3 text-muted-foreground text-xs capitalize">{schedule.frequency}</td>
                       <td className="px-5 py-3 text-muted-foreground text-xs font-mono">{schedule.limit || '—'}</td>
                       <td className="px-5 py-3">
-                        <button
-                          onClick={() => toggleEnabled(schedule)}
-                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                            schedule.enabled ? 'bg-primary' : 'bg-secondary'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-background transition-transform ${
-                              schedule.enabled ? 'translate-x-5' : 'translate-x-1'
+                        {admin ? (
+                          <button
+                            onClick={() => toggleEnabled(schedule)}
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                              schedule.enabled ? 'bg-primary' : 'bg-secondary'
                             }`}
-                          />
-                        </button>
+                          >
+                            <span
+                              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-background transition-transform ${
+                                schedule.enabled ? 'translate-x-5' : 'translate-x-1'
+                              }`}
+                            />
+                          </button>
+                        ) : (
+                          <span
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full ${
+                              schedule.enabled ? 'bg-primary' : 'bg-secondary'
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-background ${
+                                schedule.enabled ? 'translate-x-5' : 'translate-x-1'
+                              }`}
+                            />
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">{formatDate(schedule.next_run_at)}</td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">{formatDate(schedule.last_run_at)}</td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">{schedule.created_by}</td>
                       <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={() => handleDelete(schedule.id)}
-                          className="text-xs text-red-500 hover:text-red-400 transition-colors"
-                        >
-                          Delete
-                        </button>
+                        {admin && (
+                          <button
+                            onClick={() => handleDelete(schedule.id)}
+                            className="text-xs text-red-500 hover:text-red-400 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {expanded === schedule.id && (

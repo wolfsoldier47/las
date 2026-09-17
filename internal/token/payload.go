@@ -16,13 +16,14 @@ var (
 
 // Payload contains the payload data of the token.
 type Payload struct {
-	ID       uuid.UUID `json:"id"`
-	Username string    `json:"username"`
+	ID         uuid.UUID `json:"id"`
+	Username   string    `json:"username"`
+	Permission string    `json:"permission"` // read | admin
 	jwt.RegisteredClaims
 }
 
-// NewPayload creates a new token payload with a specific username and duration.
-func NewPayload(username string, duration time.Duration) (*Payload, error) {
+// NewPayload creates a new token payload with a specific username, permission, and duration.
+func NewPayload(username, permission string, duration time.Duration) (*Payload, error) {
 	tokenID, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -30,8 +31,9 @@ func NewPayload(username string, duration time.Duration) (*Payload, error) {
 
 	now := time.Now().UTC()
 	payload := &Payload{
-		ID:       tokenID,
-		Username: username,
+		ID:         tokenID,
+		Username:   username,
+		Permission: permission,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        tokenID.String(),
 			Subject:   username,
@@ -44,7 +46,7 @@ func NewPayload(username string, duration time.Duration) (*Payload, error) {
 
 // Valid checks if the token payload is valid or not.
 func (payload *Payload) Valid() error {
-	if payload.Username == "" {
+	if payload.Username == "" || payload.Permission == "" {
 		return ErrInvalidToken
 	}
 	return nil

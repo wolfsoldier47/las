@@ -23,9 +23,9 @@ func NewJWTMaker(secretKey string) (Maker, error) {
 	return &JWTMaker{secretKey}, nil
 }
 
-// CreateToken creates a new token for a specific username and duration.
-func (maker *JWTMaker) CreateToken(username string, duration time.Duration) (string, *Payload, error) {
-	payload, err := NewPayload(username, duration)
+// CreateToken creates a new token for a specific username, permission, and duration.
+func (maker *JWTMaker) CreateToken(username, permission string, duration time.Duration) (string, *Payload, error) {
+	payload, err := NewPayload(username, permission, duration)
 	if err != nil {
 		return "", payload, err
 	}
