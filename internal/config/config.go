@@ -14,6 +14,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Stage string
+
+const (
+	StageProd Stage = "prd"
+	StageEntw Stage = "entw"
+	StageTuc  Stage = "tuc"
+	StageTud  Stage = "tud"
+)
+
 // AppConfig holds all runtime configuration loaded from environment variables.
 type AppConfig struct {
 	Port           string
@@ -89,6 +98,19 @@ var (
 // Load initializes the singleton AppConfig from environment variables.
 func Load() {
 	once.Do(func() {
+
+		stage := Stage(strings.ToLower(os.Getenv("OPENSHIFT_STAGE")))
+		if stage == "dev" || stage == "DEV" {
+			stage = StageEntw
+		}
+		switch stage {
+		case StageProd, StageEntw, StageTuc, StageTud:
+		default:
+			stage = StageEntw
+		}
+
+		vaultAddr := getEnv("VAULT_ADDR", vaultAddrForStage(stage))
+
 		instance = &AppConfig{
 			Port:           getEnv("PORT", "8080"),
 			AppStage:       getEnv("OPENSHIFT_STAGE", "DEV"),
@@ -132,7 +154,7 @@ func Load() {
 			SNOWUsername: getEnv("SNOW_USERNAME", ""),
 			SNOWPassword: getEnv("SNOW_PASSWORD", ""),
 
-			JWTSecretKey:           getEnv("JWT_SECRET_KEY", "heheeeeheeeeeeeehafskjdhsdafjkhsdfjkhjksdfajkhfsdahjksfdajhksdafhjkeeee"),
+			JWTSecretKey:           getEnv("JWT_SECRET_KEY", "dddddddddddddddddddddddddddddddddddddddafadsvsdavasdvsdabasdbewa"),
 			JWTAccessTokenDuration: getEnvAsInt("JWT_ACCESS_TOKEN_DURATION", 480), // minutes
 
 			// LDAPServer:       getEnv("LDAP_SERVER", ""),
@@ -166,6 +188,19 @@ func Load() {
 		log.Println("Configuration loaded successfully")
 	})
 }
+
+
+func vaultAddrForStage(stage Stage) string {
+	switch stage {
+	case StageProd, StageTud:
+		return "https://kms-nonprod.intranet.commerzbank.com"
+	case StageEntw, StageTuc:
+		return "https://kms-nonprod.intranet.commerzbank.com"
+	default:
+		return "https://kms.intranet.commerzbank.com"
+	}
+}
+
 
 // Get returns the loaded AppConfig instance. Call Load() first.
 func Get() *AppConfig {
