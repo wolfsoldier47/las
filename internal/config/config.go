@@ -42,11 +42,15 @@ type AppConfig struct {
 	AAPPassword           string
 	AAPJobTemplateName    string
 
+	//Solaris fetching from HCV service
+	SolarisRoleID   string
+	SolarisSecretID string
+	SolarisHCVPath  string
 	// Solaris AAP instance (optional).
-	AAPSolarisURL           string
-	AAPRESTVERSIONSolaris   string
-	AAPUsernameSolaris      string
-	AAPPasswordSolaris      string
+	AAPSolarisURL             string
+	AAPRESTVERSIONSolaris     string
+	AAPUsernameSolaris        string
+	AAPPasswordSolaris        string
 	AAPJobTemplateNameSolaris string
 
 	SNOWBaseURL  string
@@ -113,11 +117,16 @@ func Load() {
 			AAPJobTemplateName:    getEnv("AAP_JOB_TEMPLATE_NAME", "ulas"),
 
 			// Solaris AAP instance.
+			SolarisRoleID:   getEnv("SOLARIS_ROLEID", ""),
+			SolarisSecretID: getEnv("SOLARIS_SECRETID", ""),
+			SolarisHCVPath:  getEnv("SOLARIS_HCVPATH", ""),
+			//from roleid secretid the hcv service will fetch the username and password
 			AAPSolarisURL:             getEnv("AAPSOLARIS_URL", ""),
 			AAPRESTVERSIONSolaris:     getEnv("AAPRESTVERSION_SOLARIS", "/api/controller/v2/"),
 			AAPUsernameSolaris:        getEnv("AAPUSERNAME_SOLARIS", ""),
 			AAPPasswordSolaris:        getEnv("AAPPASSWORD_SOLARIS", ""),
 			AAPJobTemplateNameSolaris: getEnv("AAPJOBTEMPLATENAME_SOLARIS", ""),
+
 
 			SNOWBaseURL:  getEnv("SNOW_BASE_URL", ""),
 			SNOWUsername: getEnv("SNOW_USERNAME", ""),
@@ -138,9 +147,9 @@ func Load() {
 
 			// LDAPServer:       getEnv("LDAP_SERVER", "zzzzzz"),
 			// LDAPPort:         getEnvAsInt("LDAP_PORT", 636),
-			// LDAPBaseDN:       getEnv("LDAP_BASE_DN", "OU=Users,OU=UserProvisioning,OU=Production,DC=ztb,DC=icb,DC=commerzbank,DC=com"),
+			// LDAPBaseDN:       getEnv("LDAP_BASE_DN", "test"),
 			// LDAPBindUsername: getEnv("LDAP_BIND_USERNAME", "taaa"),
-			// LDAPBindDN:       getEnv("LDAP_BIND_DN", "CN=%s,OU=ServiceAccounts,OU=UserProvisioning,OU=Production,DC=ztb,DC=icb,DC=commerzbank,DC=com"),
+			// LDAPBindDN:       getEnv("LDAP_BIND_DN", "test"),
 			// LDAPBindPassword: getEnv("LDAP_BIND_PASSWORD", ""),
 			// LDAPUserFilter:   getEnv("LDAP_USER_FILTER", "(cn=%s)"),
 			// LDAPGroupFilter:  getEnv("LDAP_GROUP_FILTER", "(memberUid=%s)"),
