@@ -89,6 +89,8 @@ type AppConfig struct {
 	// StaleScanTimeout is the maximum time (in minutes) a scan job may stay in a
 	// non-terminal state before the poller marks it as failed.
 	StaleScanTimeout int
+
+	VaultAddr string
 }
 
 var (
