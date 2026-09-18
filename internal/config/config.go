@@ -8,18 +8,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"ulas-service/models"
 
 	"gopkg.in/yaml.v3"
-)
-
-type Stage string
-
-var (
-	instance *AppConfig
-	once     sync.Once
 )
 
 // AppConfig holds all runtime configuration loaded from environment variables.
@@ -206,15 +198,6 @@ func vaultAddrForStage(stage Stage) string {
 	default:
 		return "testprod.com"
 	}
-}
-
-// Reload re-reads the configuration from the environment, replacing the
-// current singleton instance. Used at startup after bootstrap steps (e.g.
-// the Solaris vault credential fetch) set new environment variables.
-func Reload() {
-	instance = nil
-	once = sync.Once{}
-	Load()
 }
 
 // Get returns the loaded AppConfig instance. Call Load() first.
