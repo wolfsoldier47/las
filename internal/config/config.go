@@ -193,11 +193,11 @@ func Load() {
 func vaultAddrForStage(stage Stage) string {
 	switch stage {
 	case StageProd, StageTud:
-		return "https://kms-nonprod.intranet.commerzbank.com"
+		return "test.com"
 	case StageEntw, StageTuc:
-		return "https://kms-nonprod.intranet.commerzbank.com"
+		return "testprod.com"
 	default:
-		return "https://kms.intranet.commerzbank.com"
+		return "testprod.com"
 	}
 }
 
