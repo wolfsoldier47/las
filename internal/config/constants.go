@@ -1,6 +1,9 @@
 package config
 
-import "sync"
+import (
+	"sync"
+	"ulas-service/models"
+)
 
 type Stage string
 
@@ -23,4 +26,13 @@ func Reload() {
 	instance = nil
 	once = sync.Once{}
 	Load()
+}
+
+func (c *AppConfig) SolarisHCVAppRole() models.HCVAppRole {
+	return models.HCVAppRole{
+		RoleID:    c.SolarisRoleID,
+		SecretID:  c.SolarisSecretID,
+		HCVPath:   c.SolarisHCVPath,
+		Namespace: c.SolarisVaultNameSpace,
+	}
 }
