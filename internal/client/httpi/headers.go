@@ -2,41 +2,39 @@ package httpi
 
 import (
 	"net/http"
-	"testing"
+	"ulas-service/internal/client/mime"
 )
 
-func TestGetRequestHeaders(t *testing.T) {
-	// Initialization
-	client := httpClient{}
-	commonHeaders := make(http.Header)
-	commonHeaders.Set("Content-Type", "application/json")
-	commonHeaders.Set("User-Agent", "mocked-http-client")
-	client.builder = &clientBuilder{
-		headers:   commonHeaders,
-		userAgent: "cool-user-agent",
+func getHeaders(headers ...http.Header) http.Header {
+	if len(headers) > 0 {
+		return headers[0]
 	}
-
-	// Execution
-	requestHeaders := make(http.Header)
-	requestHeaders.Set("X-Request-Id", "ABC-123")
-
-	finalHeaders := client.getRequestHeaders(requestHeaders)
-
-	// Validation
-	if len(finalHeaders) != 3 {
-		t.Error("we expect 3 headers")
-	}
-
-	if finalHeaders.Get("X-Request-Id") != "ABC-123" {
-		t.Error("invalid request id received")
-	}
-
-	if finalHeaders.Get("Content-Type") != "application/json" {
-		t.Error("invalid content type received")
-	}
-
-	if finalHeaders.Get("User-Agent") != "mocked-http-client" {
-		t.Error("invalid user agent received")
-	}
+	return http.Header{}
 }
 
+func (c *httpClient) getRequestHeaders(requestHeaders http.Header) http.Header {
+	result := make(http.Header)
+
+	// Add common headers from the HTTP client instance:
+	for header, value := range c.builder.headers {
+		if len(value) > 0 {
+			result.Set(header, value[0])
+		}
+	}
+
+	// Add custom headers from the current request:
+	for header, value := range requestHeaders {
+		if len(value) > 0 {
+			result.Set(header, value[0])
+		}
+	}
+
+	// Set User-Agent if it is defined and not there yet:
+	if c.builder.userAgent != "" {
+		if result.Get(mime.HeaderUserAgent) != "" {
+			return result
+		}
+		result.Set(mime.HeaderUserAgent, c.builder.userAgent)
+	}
+	return result
+}
