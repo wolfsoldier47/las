@@ -27,6 +27,32 @@ func main() {
 	config.Load()
 	cfg := config.Get()
 
+	// Fetch AAP credentials from the HCV vault for each configured cluster
+	// when they are not already provided via the environment, then reload the
+	// config so the fetched values are picked up. Add one target per cluster.
+	clusterTargets := []service.AAPClusterTarget{
+		{
+			Name:        "solaris",
+			AAPURL:      cfg.AAPSolarisURL,
+			UsernameEnv: "AAPUSERNAME_SOLARIS",
+			PasswordEnv: "AAPPASSWORD_SOLARIS",
+			AppRole:     cfg.SolarisHCVAppRole(),
+		},
+	}
+	fetchedCreds := false
+	for _, target := range clusterTargets {
+		fetched, err := service.BootstrapAAPCredentials(cfg, target)
+		if err != nil {
+			slog.Warn("failed to fetch AAP credentials from vault", "cluster", target.Name, "error", err)
+			continue
+		}
+		fetchedCreds = fetchedCreds || fetched
+	}
+	if fetchedCreds {
+		config.Reload()
+		cfg = config.Get()
+	}
+
 	if err := database.Initialize(cfg); err != nil {
 		slog.Error("failed to initialize database", "error", err)
 		os.Exit(1)

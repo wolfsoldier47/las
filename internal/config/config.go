@@ -93,6 +93,22 @@ type AppConfig struct {
 	VaultAddr string
 }
 
+type HCVAppRole struct {
+	RoleID    string
+	SecretID  string
+	HCVPath   string
+	Namespace string
+}
+
+func (c *AppConfig) SolarisHCVAppRole() HCVAppRole {
+	return HCVAppRole{
+		RoleID:    c.SolarisRoleID,
+		SecretID:  c.SolarisSecretID,
+		HCVPath:   c.SolarisHCVPath,
+		Namespace: c.SolarisVaultNameSpace,
+	}
+}
+
 var (
 	instance *AppConfig
 	once     sync.Once
@@ -155,7 +171,6 @@ func Load() {
 			AAPPasswordSolaris:        getEnv("AAPPASSWORD_SOLARIS", ""),
 			AAPJobTemplateNameSolaris: getEnv("AAPJOBTEMPLATENAME_SOLARIS", ""),
 
-
 			SNOWBaseURL:  getEnv("SNOW_BASE_URL", ""),
 			SNOWUsername: getEnv("SNOW_USERNAME", ""),
 			SNOWPassword: getEnv("SNOW_PASSWORD", ""),
@@ -195,7 +210,6 @@ func Load() {
 	})
 }
 
-
 func vaultAddrForStage(stage Stage) string {
 	switch stage {
 	case StageProd, StageTud:
@@ -207,6 +221,14 @@ func vaultAddrForStage(stage Stage) string {
 	}
 }
 
+// Reload re-reads the configuration from the environment, replacing the
+// current singleton instance. Used at startup after bootstrap steps (e.g.
+// the Solaris vault credential fetch) set new environment variables.
+func Reload() {
+	instance = nil
+	once = sync.Once{}
+	Load()
+}
 
 // Get returns the loaded AppConfig instance. Call Load() first.
 func Get() *AppConfig {

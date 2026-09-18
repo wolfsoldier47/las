@@ -45,12 +45,11 @@ func (h hcvService) Token(url string, namespace string, roleId string, secretId 
 	}
 	client := &http.Client{Transport: tr}
 	response, err := client.Do(request)
-
-	defer response.Body.Close()
-
 	if err != nil {
 		return "", err
 	}
+	defer response.Body.Close()
+
 	body, _ = io.ReadAll(response.Body)
 	err = json.Unmarshal(body, &appRoleResponse)
 	if err != nil {
