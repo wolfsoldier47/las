@@ -118,6 +118,8 @@ func Load() {
 			HttpProxy:      getEnv("HTTP_PROXY", ""),
 			BackEndBaseUrl: getEnv("BACKEND_BASE_URL", ""),
 
+			VaultAddr: vaultAddr,
+
 			DBHost:     getEnv("DB_HOST", "localhost"),
 			DBPort:     getEnv("DB_PORT", "5432"),
 			DBUser:     getEnv("DB_USER", "ulas"),
