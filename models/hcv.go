@@ -20,6 +20,13 @@ type Credential struct {
 	Password string `yaml:"password_new"`
 }
 
+type HCVAppRole struct {
+	RoleID    string
+	SecretID  string
+	HCVPath   string
+	Namespace string
+}
+
 type HcvService interface {
 	Token(url string, namespace string, roleId string, secretId string) (string, error)
 	HttpClient(token string) httpi.Client

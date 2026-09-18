@@ -10,17 +10,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"ulas-service/models"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Stage string
 
-const (
-	StageProd Stage = "prd"
-	StageEntw Stage = "entw"
-	StageTuc  Stage = "tuc"
-	StageTud  Stage = "tud"
+var (
+	instance *AppConfig
+	once     sync.Once
 )
 
 // AppConfig holds all runtime configuration loaded from environment variables.
@@ -93,26 +92,14 @@ type AppConfig struct {
 	VaultAddr string
 }
 
-type HCVAppRole struct {
-	RoleID    string
-	SecretID  string
-	HCVPath   string
-	Namespace string
-}
-
-func (c *AppConfig) SolarisHCVAppRole() HCVAppRole {
-	return HCVAppRole{
+func (c *AppConfig) SolarisHCVAppRole() models.HCVAppRole {
+	return models.HCVAppRole{
 		RoleID:    c.SolarisRoleID,
 		SecretID:  c.SolarisSecretID,
 		HCVPath:   c.SolarisHCVPath,
 		Namespace: c.SolarisVaultNameSpace,
 	}
 }
-
-var (
-	instance *AppConfig
-	once     sync.Once
-)
 
 // Load initializes the singleton AppConfig from environment variables.
 func Load() {

@@ -26,7 +26,7 @@ type AAPClusterTarget struct {
 	UsernameEnv string
 	PasswordEnv string
 	// AppRole is the vault AppRole spec (role/secret/path) for this cluster.
-	AppRole config.HCVAppRole
+	AppRole models.HCVAppRole
 }
 
 // BootstrapAAPCredentials fetches the AAP username/password for one cluster
@@ -65,7 +65,7 @@ func BootstrapAAPCredentials(cfg *config.AppConfig, target AAPClusterTarget) (bo
 
 // fetchVaultCredentials logs into the vault with the AppRole and reads the
 // secret at the given path.
-func fetchVaultCredentials(vaultAddr string, appRole config.HCVAppRole) (models.Credential, error) {
+func fetchVaultCredentials(vaultAddr string, appRole models.HCVAppRole) (models.Credential, error) {
 	hcv := NewHcvService()
 
 	token, err := hcv.Token(
