@@ -52,9 +52,10 @@ type AppConfig struct {
 	AAPJobTemplateName    string
 
 	//Solaris fetching from HCV service
-	SolarisRoleID   string
-	SolarisSecretID string
-	SolarisHCVPath  string
+	SolarisRoleID         string
+	SolarisSecretID       string
+	SolarisHCVPath        string
+	SolarisVaultNameSpace string
 	// Solaris AAP instance (optional).
 	AAPSolarisURL             string
 	AAPRESTVERSIONSolaris     string
@@ -139,9 +140,10 @@ func Load() {
 			AAPJobTemplateName:    getEnv("AAP_JOB_TEMPLATE_NAME", "ulas"),
 
 			// Solaris AAP instance.
-			SolarisRoleID:   getEnv("SOLARIS_ROLEID", ""),
-			SolarisSecretID: getEnv("SOLARIS_SECRETID", ""),
-			SolarisHCVPath:  getEnv("SOLARIS_HCVPATH", ""),
+			SolarisRoleID:         getEnv("SOLARIS_ROLEID", ""),
+			SolarisSecretID:       getEnv("SOLARIS_SECRETID", ""),
+			SolarisVaultNameSpace: getEnv("SOLARIS_HCVNAMESPACE", ""),
+			SolarisHCVPath:        getEnv("SOLARIS_HCVPATH", ""),
 			//from roleid secretid the hcv service will fetch the username and password
 			AAPSolarisURL:             getEnv("AAPSOLARIS_URL", ""),
 			AAPRESTVERSIONSolaris:     getEnv("AAPRESTVERSION_SOLARIS", "/api/controller/v2/"),
