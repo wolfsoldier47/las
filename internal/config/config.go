@@ -25,6 +25,7 @@ type AppConfig struct {
 	DBUser     string
 	DBPassword string
 	DBName     string
+	DBSchema   string
 	DBSSLMode  string
 
 	// Connection pool
@@ -113,6 +114,7 @@ func Load() {
 			DBPassword: getEnv("DB_PASSWORD", "ulas"),
 			DBName:     getEnv("DB_NAME", "ulas"),
 			DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
+			DBSchema:   getEnv("DB_SCHEMA", "public"),
 
 			// Connection pool
 			MaxIdleConns: getEnv("MAXIDLECONNS", "10"),
@@ -179,17 +181,6 @@ func Load() {
 	})
 }
 
-func vaultAddrForStage(stage Stage) string {
-	switch stage {
-	case StageProd, StageTud:
-		return "test.com"
-	case StageEntw, StageTuc:
-		return "testprod.com"
-	default:
-		return "testprod.com"
-	}
-}
-
 // Get returns the loaded AppConfig instance. Call Load() first.
 func Get() *AppConfig {
 	if instance == nil {
@@ -220,12 +211,17 @@ func getEnvAsInt(key string, defaultValue int) int {
 
 // DatabaseDSN builds the PostgreSQL DSN from config fields.
 func (c *AppConfig) DatabaseDSN() string {
-	return "host=" + c.DBHost +
-		" port=" + c.DBPort +
-		" user=" + c.DBUser +
-		" password=" + c.DBPassword +
-		" dbname=" + c.DBName +
-		" sslmode=" + c.DBSSLMode
+
+	DBHost := c.DBHost
+	DBName := c.DBName
+	DBUsername := c.DBUser
+	DBPassword := c.DBPassword
+	DBSSL := c.DBSSLMode
+	schemaName := c.DBSchema
+
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:5432/%s?sslmode=%s&options=-csearch_path=%s", DBUsername, DBPassword, DBHost, DBName, DBSSL, schemaName)
+
+	return dsn
 }
 
 // MaxIdleConnsInt returns MaxIdleConns as an int.

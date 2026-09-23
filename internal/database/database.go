@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"ulas-service/internal/config"
 	"ulas-service/models"
 )
 
@@ -20,10 +19,9 @@ var (
 )
 
 // Initialize opens the PostgreSQL connection with GORM, configures the pool, and runs auto-migrations.
-func Initialize(cfg *config.AppConfig) error {
-	connection := cfg.DatabaseDSN()
+func Initialize(dsn string, maxIdleConns, maxOpenConns int) error {
 	var err error
-	db, err = gorm.Open(postgres.Open(connection), &gorm.Config{
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {
@@ -37,8 +35,8 @@ func Initialize(cfg *config.AppConfig) error {
 		return initErr
 	}
 
-	sqlDB.SetMaxIdleConns(cfg.MaxIdleConnsInt())
-	sqlDB.SetMaxOpenConns(cfg.MaxOpenConnsInt())
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetMaxOpenConns(maxOpenConns)
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 
 	if err := migrate(); err != nil {

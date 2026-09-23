@@ -53,7 +53,7 @@ func main() {
 		cfg = config.Get()
 	}
 
-	if err := database.Initialize(cfg); err != nil {
+	if err := database.Initialize(cfg.DatabaseDSN(), cfg.MaxIdleConnsInt(), cfg.MaxOpenConnsInt()); err != nil {
 		slog.Error("failed to initialize database", "error", err)
 		os.Exit(1)
 	}

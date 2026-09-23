@@ -24,7 +24,7 @@ func main() {
 	config.Load()
 	cfg := config.Get()
 
-	if err := database.Initialize(cfg); err != nil {
+	if err := database.Initialize(cfg.DatabaseDSN(), cfg.MaxIdleConnsInt(), cfg.MaxOpenConnsInt()); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to initialize database: %v\n", err)
 		os.Exit(1)
 	}
