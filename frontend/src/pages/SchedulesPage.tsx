@@ -7,6 +7,7 @@ interface ScanSchedule {
   name: string
   frequency: 'daily' | 'weekly' | 'monthly'
   limit: string
+  target_os: string
   enabled: boolean
   next_run_at: string | null
   last_run_at: string | null
@@ -28,6 +29,7 @@ interface FormData {
   name: string
   frequency: 'daily' | 'weekly' | 'monthly'
   limit: string
+  target_os: 'linux' | 'solaris'
   enabled: boolean
   start_at: string
 }
@@ -36,6 +38,7 @@ const emptyForm: FormData = {
   name: '',
   frequency: 'daily',
   limit: '',
+  target_os: 'linux',
   enabled: true,
   start_at: '',
 }
@@ -97,6 +100,7 @@ export default function SchedulesPage() {
       name: form.name,
       frequency: form.frequency,
       limit: form.limit,
+      target_os: form.target_os,
       enabled: form.enabled,
     }
     if (form.start_at) {
@@ -120,6 +124,7 @@ export default function SchedulesPage() {
         name: schedule.name,
         frequency: schedule.frequency,
         limit: schedule.limit,
+        target_os: schedule.target_os,
         enabled: !schedule.enabled,
         next_run_at: schedule.next_run_at,
       })
@@ -186,6 +191,17 @@ export default function SchedulesPage() {
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-muted-foreground">Target OS</label>
+              <select
+                value={form.target_os}
+                onChange={(e) => setForm({ ...form, target_os: e.target.value as FormData['target_os'] })}
+                className="bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+              >
+                <option value="linux">Linux (RHEL)</option>
+                <option value="solaris">Solaris</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
               <label className="text-xs text-muted-foreground">Host limit (optional)</label>
               <input
                 type="text"
@@ -244,6 +260,7 @@ export default function SchedulesPage() {
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Name</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Frequency</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Limit</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Target OS</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Enabled</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Next Run</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Last Run</th>
@@ -254,11 +271,11 @@ export default function SchedulesPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground text-sm">Loading...</td>
+                  <td colSpan={9} className="px-5 py-8 text-center text-muted-foreground text-sm">Loading...</td>
                 </tr>
               ) : schedules.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-muted-foreground text-sm">
+                  <td colSpan={9} className="px-5 py-8 text-center text-muted-foreground text-sm">
                     No schedules yet.{admin && <> Click <strong>New Schedule</strong> to create one.</>}
                   </td>
                 </tr>
@@ -281,6 +298,7 @@ export default function SchedulesPage() {
                       </td>
                       <td className="px-5 py-3 text-muted-foreground text-xs capitalize">{schedule.frequency}</td>
                       <td className="px-5 py-3 text-muted-foreground text-xs font-mono">{schedule.limit || '—'}</td>
+                      <td className="px-5 py-3 text-muted-foreground text-xs capitalize">{schedule.target_os || 'linux'}</td>
                       <td className="px-5 py-3">
                         {admin ? (
                           <button
@@ -325,7 +343,7 @@ export default function SchedulesPage() {
                     </tr>
                     {expanded === schedule.id && (
                       <tr>
-                        <td colSpan={8} className="px-5 py-0 border-b border-border/50">
+                        <td colSpan={9} className="px-5 py-0 border-b border-border/50">
                           <div className="py-4">
                             <div className="font-semibold text-xs text-foreground mb-2">Run History</div>
                             {runsLoading[schedule.id] ? (

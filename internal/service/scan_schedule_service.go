@@ -26,6 +26,7 @@ type CreateScanScheduleRequest struct {
 	Name      string                        `json:"name" binding:"required"`
 	Frequency models.ScanScheduleFrequency  `json:"frequency" binding:"required"`
 	Limit     string                        `json:"limit"`
+	TargetOS  models.OSType                 `json:"target_os"`
 	Enabled   bool                          `json:"enabled"`
 	StartAt   *time.Time                    `json:"start_at"`
 	CreatedBy string                        `json:"-"`
@@ -36,6 +37,7 @@ type UpdateScanScheduleRequest struct {
 	Name      string                        `json:"name" binding:"required"`
 	Frequency models.ScanScheduleFrequency  `json:"frequency" binding:"required"`
 	Limit     string                        `json:"limit"`
+	TargetOS  models.OSType                 `json:"target_os"`
 	Enabled   bool                          `json:"enabled"`
 	NextRunAt *time.Time                    `json:"next_run_at"`
 }
@@ -56,6 +58,14 @@ func (s *DefaultScanScheduleService) Create(ctx context.Context, req CreateScanS
 		return nil, fmt.Errorf("invalid schedule frequency: %s", req.Frequency)
 	}
 
+	targetOS := req.TargetOS
+	if targetOS == "" {
+		targetOS = models.OSTypeLinux
+	}
+	if !models.IsValidScanScheduleTargetOS(targetOS) {
+		return nil, fmt.Errorf("invalid target os: %s (supported: %s, %s)", req.TargetOS, models.OSTypeLinux, models.OSTypeSolaris)
+	}
+
 	now := time.Now().UTC()
 	nextRun := now
 	if req.StartAt != nil {
@@ -67,6 +77,7 @@ func (s *DefaultScanScheduleService) Create(ctx context.Context, req CreateScanS
 		Name:      req.Name,
 		Frequency: req.Frequency,
 		Limit:     req.Limit,
+		TargetOS:  targetOS,
 		Enabled:   req.Enabled,
 		NextRunAt: &nextRun,
 		CreatedBy: req.CreatedBy,
@@ -104,6 +115,14 @@ func (s *DefaultScanScheduleService) Update(ctx context.Context, id uuid.UUID, r
 		return nil, fmt.Errorf("invalid schedule frequency: %s", req.Frequency)
 	}
 
+	targetOS := req.TargetOS
+	if targetOS == "" {
+		targetOS = models.OSTypeLinux
+	}
+	if !models.IsValidScanScheduleTargetOS(targetOS) {
+		return nil, fmt.Errorf("invalid target os: %s (supported: %s, %s)", req.TargetOS, models.OSTypeLinux, models.OSTypeSolaris)
+	}
+
 	schedule, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get scan schedule: %w", err)
@@ -113,6 +132,7 @@ func (s *DefaultScanScheduleService) Update(ctx context.Context, id uuid.UUID, r
 	schedule.Name = req.Name
 	schedule.Frequency = req.Frequency
 	schedule.Limit = req.Limit
+	schedule.TargetOS = targetOS
 	schedule.Enabled = req.Enabled
 	schedule.NextRunAt = req.NextRunAt
 	schedule.UpdatedAt = now

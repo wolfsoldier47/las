@@ -37,12 +37,23 @@ type ScanSchedule struct {
 	Name       string                `json:"name" db:"name"`
 	Frequency  ScanScheduleFrequency `json:"frequency" db:"frequency"`
 	Limit      string                `json:"limit" db:"limit"`
+	TargetOS   OSType                `json:"target_os" db:"target_os" gorm:"column:target_os;type:text;default:linux"`
 	Enabled    bool                  `json:"enabled" db:"enabled"`
 	NextRunAt  *time.Time            `json:"next_run_at" db:"next_run_at"`
 	LastRunAt  *time.Time            `json:"last_run_at" db:"last_run_at"`
 	CreatedBy  string                `json:"created_by" db:"created_by"`
 	CreatedAt  time.Time             `json:"created_at" db:"created_at"`
 	UpdatedAt  time.Time             `json:"updated_at" db:"updated_at"`
+}
+
+// IsValidScanScheduleTargetOS reports whether an OS type can be targeted by
+// a scheduled scan. Only OS types with a configured AAP instance qualify.
+func IsValidScanScheduleTargetOS(os OSType) bool {
+	switch os {
+	case OSTypeLinux, OSTypeSolaris:
+		return true
+	}
+	return false
 }
 
 // ComputeNextRun returns the next scheduled run time based on the frequency.

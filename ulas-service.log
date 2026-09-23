@@ -5649,3 +5649,8 @@
 {"time":"2026-09-08T09:02:44.083295486+08:00","level":"INFO","msg":"Configuration loaded successfully"}
 {"time":"2026-09-08T09:02:44.416772586+08:00","level":"INFO","msg":"DB initialized successfully"}
 {"time":"2026-09-08T09:02:44.41783177+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-09-23T23:15:34.87379818+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-09-23T23:15:35.234468781+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-09-23T23:15:35.235436015+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-09-23T23:16:35.241014496+08:00","level":"INFO","msg":"triggering scheduled scan","schedule_id":"7105d975-935b-4db4-a5ce-d37c56cbe068","name":"test","frequency":"daily","limit":"test","target_os":"linux"}
+{"time":"2026-09-23T23:16:36.284109651+08:00","level":"ERROR","msg":"scheduled scan failed","schedule_id":"7105d975-935b-4db4-a5ce-d37c56cbe068","name":"test","error":"resolve template \"ulas\": unexpected status 503: <html error page>"}

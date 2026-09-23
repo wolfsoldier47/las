@@ -42,15 +42,16 @@ func NewPgScanScheduleRepository(db *sql.DB) *PgScanScheduleRepository {
 func (r *PgScanScheduleRepository) Create(ctx context.Context, schedule *models.ScanSchedule) error {
 	query := `
 		INSERT INTO scan_schedules (
-			id, name, frequency, "limit", enabled, next_run_at, last_run_at, created_by, created_at, updated_at
+			id, name, frequency, "limit", target_os, enabled, next_run_at, last_run_at, created_by, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		schedule.ID,
 		schedule.Name,
 		schedule.Frequency,
 		schedule.Limit,
+		schedule.TargetOS,
 		schedule.Enabled,
 		schedule.NextRunAt,
 		schedule.LastRunAt,
@@ -67,7 +68,7 @@ func (r *PgScanScheduleRepository) Create(ctx context.Context, schedule *models.
 // GetByID returns a scan schedule by its UUID.
 func (r *PgScanScheduleRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.ScanSchedule, error) {
 	query := `
-		SELECT id, name, frequency, "limit", enabled, next_run_at, last_run_at, created_by, created_at, updated_at
+		SELECT id, name, frequency, "limit", target_os, enabled, next_run_at, last_run_at, created_by, created_at, updated_at
 		FROM scan_schedules
 		WHERE id = $1
 	`
@@ -79,6 +80,7 @@ func (r *PgScanScheduleRepository) GetByID(ctx context.Context, id uuid.UUID) (*
 		&schedule.Name,
 		&schedule.Frequency,
 		&schedule.Limit,
+		&schedule.TargetOS,
 		&schedule.Enabled,
 		&schedule.NextRunAt,
 		&schedule.LastRunAt,
@@ -97,7 +99,7 @@ func (r *PgScanScheduleRepository) GetByID(ctx context.Context, id uuid.UUID) (*
 // List returns all scan schedules ordered by creation time descending.
 func (r *PgScanScheduleRepository) List(ctx context.Context) ([]models.ScanSchedule, error) {
 	query := `
-		SELECT id, name, frequency, "limit", enabled, next_run_at, last_run_at, created_by, created_at, updated_at
+		SELECT id, name, frequency, "limit", target_os, enabled, next_run_at, last_run_at, created_by, created_at, updated_at
 		FROM scan_schedules
 		ORDER BY created_at DESC
 	`
@@ -115,6 +117,7 @@ func (r *PgScanScheduleRepository) List(ctx context.Context) ([]models.ScanSched
 			&schedule.Name,
 			&schedule.Frequency,
 			&schedule.Limit,
+			&schedule.TargetOS,
 			&schedule.Enabled,
 			&schedule.NextRunAt,
 			&schedule.LastRunAt,
@@ -140,10 +143,11 @@ func (r *PgScanScheduleRepository) Update(ctx context.Context, schedule *models.
 		SET name = $2,
 		    frequency = $3,
 		    "limit" = $4,
-		    enabled = $5,
-		    next_run_at = $6,
-		    last_run_at = $7,
-		    updated_at = $8
+		    target_os = $5,
+		    enabled = $6,
+		    next_run_at = $7,
+		    last_run_at = $8,
+		    updated_at = $9
 		WHERE id = $1
 	`
 	res, err := r.db.ExecContext(ctx, query,
@@ -151,6 +155,7 @@ func (r *PgScanScheduleRepository) Update(ctx context.Context, schedule *models.
 		schedule.Name,
 		schedule.Frequency,
 		schedule.Limit,
+		schedule.TargetOS,
 		schedule.Enabled,
 		schedule.NextRunAt,
 		schedule.LastRunAt,
@@ -189,7 +194,7 @@ func (r *PgScanScheduleRepository) Delete(ctx context.Context, id uuid.UUID) err
 // ListEnabledDue returns enabled schedules whose next run is at or before the given time.
 func (r *PgScanScheduleRepository) ListEnabledDue(ctx context.Context, before time.Time) ([]models.ScanSchedule, error) {
 	query := `
-		SELECT id, name, frequency, "limit", enabled, next_run_at, last_run_at, created_by, created_at, updated_at
+		SELECT id, name, frequency, "limit", target_os, enabled, next_run_at, last_run_at, created_by, created_at, updated_at
 		FROM scan_schedules
 		WHERE enabled = true AND next_run_at IS NOT NULL AND next_run_at <= $1
 		ORDER BY next_run_at ASC
@@ -208,6 +213,7 @@ func (r *PgScanScheduleRepository) ListEnabledDue(ctx context.Context, before ti
 			&schedule.Name,
 			&schedule.Frequency,
 			&schedule.Limit,
+			&schedule.TargetOS,
 			&schedule.Enabled,
 			&schedule.NextRunAt,
 			&schedule.LastRunAt,
