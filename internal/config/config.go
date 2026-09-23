@@ -147,15 +147,26 @@ func Load() {
 			JWTSecretKey:           getEnv("JWT_SECRET_KEY", "dddddddddddddddddddddddddddddddddddddddafadsvsdavasdvsdabasdbewa"),
 			JWTAccessTokenDuration: getEnvAsInt("JWT_ACCESS_TOKEN_DURATION", 480), // minutes
 
-			LDAPServer:       getEnv("LDAP_SERVER", ""),
-			LDAPPort:         getEnvAsInt("LDAP_PORT", 636),
-			LDAPBaseDN:       getEnv("LDAP_BASE_DN", ""),
-			LDAPBindDN:       getEnv("LDAP_BIND_DN", ""),
-			LDAPBindPassword: getEnv("LDAP_BIND_PASSWORD", ""),
-			LDAPUserFilter:   getEnv("LDAP_USER_FILTER", "(cn=%s)"),
-			LDAPGroupFilter:  getEnv("LDAP_GROUP_FILTER", "(memberUid=%s)"),
-			LDAPUseSSL:       getEnv("LDAP_USE_SSL", "true") == "true",
-			LDAPSkipTLS:      getEnv("LDAP_SKIP_TLS", "true") == "true",
+			// LDAPServer:       getEnv("LDAP_SERVER", ""),
+			// LDAPPort:         getEnvAsInt("LDAP_PORT", 636),
+			// LDAPBaseDN:       getEnv("LDAP_BASE_DN", ""),
+			// LDAPBindDN:       getEnv("LDAP_BIND_DN", ""),
+			// LDAPBindPassword: getEnv("LDAP_BIND_PASSWORD", ""),
+			// LDAPUserFilter:   getEnv("LDAP_USER_FILTER", "(cn=%s)"),
+			// LDAPGroupFilter:  getEnv("LDAP_GROUP_FILTER", "(memberUid=%s)"),
+			// LDAPUseSSL:       getEnv("LDAP_USE_SSL", "true") == "true",
+			// LDAPSkipTLS:      getEnv("LDAP_SKIP_TLS", "true") == "true",
+
+			// LDAPServer:       getEnv("LDAP_SERVER", "zzzzzz"),
+			// LDAPPort:         getEnvAsInt("LDAP_PORT", 636),
+			// LDAPBaseDN:       getEnv("LDAP_BASE_DN", "test"),
+			// LDAPBindUsername: getEnv("LDAP_BIND_USERNAME", "taaa"),
+			// LDAPBindDN:       getEnv("LDAP_BIND_DN", "test"),
+			// LDAPBindPassword: getEnv("LDAP_BIND_PASSWORD", ""),
+			// LDAPUserFilter:   getEnv("LDAP_USER_FILTER", "(cn=%s)"),
+			// LDAPGroupFilter:  getEnv("LDAP_GROUP_FILTER", "(memberUid=%s)"),
+			// LDAPUseSSL:       getEnv("LDAP_USE_SSL", "true") == "true",
+			// LDAPSkipTLS:      getEnv("LDAP_SKIP_TLS", "true") == "true",
 
 			StaleScanTimeout: getEnvAsInt("STALE_SCAN_TIMEOUT", 1), //stalescan is in minutes
 		}

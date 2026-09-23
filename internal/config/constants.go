@@ -36,3 +36,14 @@ func (c *AppConfig) SolarisHCVAppRole() models.HCVAppRole {
 		Namespace: c.SolarisVaultNameSpace,
 	}
 }
+
+func vaultAddrForStage(stage Stage) string {
+	switch stage {
+	case StageProd, StageTud:
+		return "test.com"
+	case StageEntw, StageTuc:
+		return "testprod.com"
+	default:
+		return "testprod.com"
+	}
+}
