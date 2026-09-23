@@ -81,7 +81,7 @@ func fetchVaultCredentials(vaultAddr string, appRole models.HCVAppRole) (models.
 		return models.Credential{}, fmt.Errorf("hcv approle login returned an empty token")
 	}
 
-	secretURL := vaultSecretURL(vaultAddr, appRole.HCVPath)
+	secretURL := vaultSecretURL(vaultAddr, appRole.HCVPath, appRole.Namespace)
 	resp, err := hcv.HttpClient(token).Get(secretURL)
 	if err != nil {
 		return models.Credential{}, fmt.Errorf("hcv secret read %s: %w", secretURL, err)
@@ -95,12 +95,15 @@ func fetchVaultCredentials(vaultAddr string, appRole models.HCVAppRole) (models.
 
 // vaultSecretURL joins the vault address and the configured secret path,
 // ensuring the /v1/ API prefix is present exactly once.
-func vaultSecretURL(vaultAddr, path string) string {
-	p := strings.TrimPrefix(path, "/")
-	if !strings.HasPrefix(p, "v1/") {
-		p = "v1/" + p
+func vaultSecretURL(vaultAddr, path string, namespace string) string {
+
+	namespaceFix := strings.TrimPrefix(namespace, "/")
+	pathFix := strings.TrimPrefix(path, "/")
+	endpoint := namespaceFix + "/" + pathFix
+	if !strings.HasPrefix(endpoint, "v1/") {
+		endpoint = "/v1/" + endpoint
 	}
-	return strings.TrimRight(vaultAddr, "/") + "/" + p
+	return strings.TrimRight(vaultAddr, "/") + endpoint
 }
 
 // parseVaultCredential extracts the username/password from a vault secret
@@ -110,15 +113,15 @@ func parseVaultCredential(body []byte) (models.Credential, error) {
 	var wrapper struct {
 		Data struct {
 			Data     map[string]string `json:"data"`
-			Username string            `json:"username_new"`
-			Password string            `json:"password_new"`
+			Username string            `json:"username"`
+			Password string            `json:"password"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &wrapper); err == nil {
-		if username, ok := wrapper.Data.Data["username_new"]; ok {
+		if username, ok := wrapper.Data.Data["username"]; ok {
 			return models.Credential{
 				Username: username,
-				Password: wrapper.Data.Data["password_new"],
+				Password: wrapper.Data.Data["password"],
 			}, nil
 		}
 		if wrapper.Data.Username != "" {
