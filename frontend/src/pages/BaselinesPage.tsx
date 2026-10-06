@@ -325,6 +325,7 @@ export default function BaselinesPage() {
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Active</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Description</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Created By</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Approved By</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Created</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground"></th>
               </tr>
@@ -363,6 +364,7 @@ export default function BaselinesPage() {
                   </td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{v.description || '—'}</td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{v.created_by || '—'}</td>
+                  <td className="px-5 py-3 text-muted-foreground text-xs">{v.approved_by || '—'}</td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{new Date(v.created_at).toLocaleString()}</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex gap-2 justify-end">

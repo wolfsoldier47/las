@@ -34,6 +34,7 @@ type BaselineVersionSummary struct {
 	EntryCount     int             `json:"entry_count"`
 	Description    string          `json:"description,omitempty"`
 	CreatedBy      string          `json:"created_by,omitempty"`
+	ApprovedBy     string          `json:"approved_by,omitempty"`
 	ApprovalStatus string          `json:"approval_status"`
 	CreatedAt      time.Time       `json:"created_at"`
 }
@@ -416,6 +417,7 @@ func (r *PgBaselineRepository) ListVersions(ctx context.Context) ([]BaselineVers
 			COUNT(*) AS entry_count,
 			MAX(b.description) AS description,
 			MAX(b.created_by) AS created_by,
+			MAX(b.approved_by) AS approved_by,
 			MAX(b.approval_status) AS approval_status,
 			MIN(b.created_at) AS created_at
 		FROM master_baselines b
@@ -462,6 +464,7 @@ func (r *PgBaselineRepository) ListVersionsPaginated(ctx context.Context, page, 
 			COUNT(*) AS entry_count,
 			MAX(b.description) AS description,
 			MAX(b.created_by) AS created_by,
+			MAX(b.approved_by) AS approved_by,
 			MAX(b.approval_status) AS approval_status,
 			MIN(b.created_at) AS created_at
 		FROM master_baselines b
@@ -494,6 +497,7 @@ func (r *PgBaselineRepository) scanVersionSummaries(rows *sql.Rows) ([]BaselineV
 			&s.EntryCount,
 			&s.Description,
 			&s.CreatedBy,
+			&s.ApprovedBy,
 			&s.ApprovalStatus,
 			&s.CreatedAt,
 		); err != nil {
