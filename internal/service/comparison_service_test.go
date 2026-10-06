@@ -56,7 +56,7 @@ func (r *memScanRepo) GetScanResultByJobAndHost(ctx context.Context, scanJobID, 
 func (r *memScanRepo) ListScanResultsByJobID(ctx context.Context, scanJobID uuid.UUID) ([]models.ScanResult, error) {
 	return nil, nil
 }
-func (r *memScanRepo) ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int) ([]models.ScanResult, int, error) {
+func (r *memScanRepo) ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, onlyFailing bool) ([]models.ScanResult, int, error) {
 	return nil, 0, nil
 }
 func (r *memScanRepo) UpdateScanResult(ctx context.Context, result *models.ScanResult) error {
@@ -144,6 +144,9 @@ func (r *memHostRepo) GetByHostname(ctx context.Context, hostname string) (*mode
 	return nil, repository.ErrHostNotFound
 }
 func (r *memHostRepo) List(ctx context.Context) ([]models.Host, error)     { return nil, nil }
+func (r *memHostRepo) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Host, error) {
+	return nil, nil
+}
 func (r *memHostRepo) ListPaginated(ctx context.Context, filters repository.HostFilters, page, limit int) ([]models.Host, int, error) {
 	return nil, 0, nil
 }
@@ -264,6 +267,18 @@ func (r *memIncidentRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.In
 }
 func (r *memIncidentRepo) List(ctx context.Context, filters repository.IncidentFilters) ([]models.Incident, error) {
 	return r.incidents, nil
+}
+func (r *memIncidentRepo) ListByScanJobID(ctx context.Context, scanJobID uuid.UUID) ([]models.Incident, error) {
+	return nil, nil
+}
+func (r *memIncidentRepo) ListByScanResultIDs(ctx context.Context, ids []uuid.UUID) ([]models.Incident, error) {
+	return nil, nil
+}
+func (r *memIncidentRepo) CountByScanJobID(ctx context.Context, scanJobID uuid.UUID) ([]repository.IncidentCount, error) {
+	return nil, nil
+}
+func (r *memIncidentRepo) CountByScanResultIDs(ctx context.Context, ids []uuid.UUID) ([]repository.IncidentCount, error) {
+	return nil, nil
 }
 func (r *memIncidentRepo) Update(ctx context.Context, incident *models.Incident) error { return nil }
 

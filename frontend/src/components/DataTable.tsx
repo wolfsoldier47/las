@@ -17,6 +17,13 @@ interface AllowedDeviation {
   actual_value: string
 }
 
+interface IncidentCounts {
+  passwd: number
+  group: number
+  total: number
+  open: number
+}
+
 interface HostResult {
   id: string
   scan_job_id: string
@@ -25,7 +32,8 @@ interface HostResult {
   status: string
   deviations_found: number
   allowed_deviations: AllowedDeviation[]
-  incidents: Incident[]
+  incidents?: Incident[]
+  incident_counts?: IncidentCounts
 }
 
 interface ScanJob {
@@ -48,7 +56,7 @@ interface ScanDetailData {
 
 interface DataTableProps {
   selectedHost?: string
-  onSelectHost?: (host: string) => void
+  onSelectHost?: (selection: { hostname: string; hostId: string; scanJobId: string }) => void
 }
 
 const DEFAULT_LIMIT = 20
@@ -72,7 +80,9 @@ export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
         const scans: ScanJob[] = res.data || []
         if (scans.length === 0) return
         const latest = scans[0]
-        return api.get(`/scans/${latest.id}?page=${page}&limit=${limit}&include_incidents=true`)
+        // Incident counts come from a cheap aggregate; full incident rows are
+        // loaded per host on demand via /scans/:id/hosts/:hostId.
+        return api.get(`/scans/${latest.id}?page=${page}&limit=${limit}`)
       })
       .then((res) => {
         if (cancelled || !res) return
@@ -85,9 +95,14 @@ export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
         setDetail({ ...data, results })
 
         if (results.length > 0) {
-          const stillVisible = selectedHost && results.some((r) => r.hostname === selectedHost)
+          const stillVisible =
+            selectedHost && results.some((r) => r.hostname === selectedHost)
           if (!stillVisible) {
-            onSelectHost?.(results[0].hostname)
+            onSelectHost?.({
+              hostname: results[0].hostname,
+              hostId: results[0].host_id,
+              scanJobId: results[0].scan_job_id,
+            })
           }
         }
       })
@@ -99,23 +114,22 @@ export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
   }, [page, limit])
 
   const rows = (detail?.results || []).map((r) => {
-    const passwdIncidents = r.incidents.filter((i) => i.file_type === 'passwd').length
-    const groupIncidents = r.incidents.filter((i) => i.file_type === 'group').length
+    const counts = r.incident_counts || { passwd: 0, group: 0, total: 0, open: 0 }
     const passwdAllowed = r.allowed_deviations.filter((d) => d.file_type === 'passwd').length
     const groupAllowed = r.allowed_deviations.filter((d) => d.file_type === 'group').length
     let status: 'deviation' | 'allowed' | 'clean' = 'clean'
     if (r.status === 'deviation_found') status = 'deviation'
     else if (r.status === 'allowed_deviation') status = 'allowed'
     else if (r.status === 'failed') status = 'deviation'
-    const deviation = r.incidents.length
-      ? r.incidents.map((i) => `${i.file_type}:${i.entry_key}`).join(', ')
-      : '—'
+    const deviation =
+      counts.total > 0 ? `${counts.passwd} passwd · ${counts.group} group` : '—'
     return {
       id: r.id,
       hostId: r.host_id,
+      scanJobId: r.scan_job_id,
       host: r.hostname,
-      passwd: passwdIncidents > 0 ? 'mismatch' : passwdAllowed > 0 ? 'allowed' : 'match',
-      group: groupIncidents > 0 ? 'mismatch' : groupAllowed > 0 ? 'allowed' : 'match',
+      passwd: counts.passwd > 0 ? 'mismatch' : passwdAllowed > 0 ? 'allowed' : 'match',
+      group: counts.group > 0 ? 'mismatch' : groupAllowed > 0 ? 'allowed' : 'match',
       status,
       deviation,
       allowedCount: r.allowed_deviations.length,
@@ -197,7 +211,13 @@ export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
               filteredRows.map((row) => (
                 <tr
                   key={row.host}
-                  onClick={() => onSelectHost?.(row.host)}
+                  onClick={() =>
+                    onSelectHost?.({
+                      hostname: row.host,
+                      hostId: row.hostId,
+                      scanJobId: row.scanJobId,
+                    })
+                  }
                   className={`transition-colors duration-150 cursor-pointer border-b border-border/50 ${
                     selectedHost === row.host ? 'bg-primary/10 hover:bg-primary/15' : 'hover:bg-primary/[0.03]'
                   }`}

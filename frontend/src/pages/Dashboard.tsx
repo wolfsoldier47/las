@@ -4,19 +4,19 @@ import { DataTable } from '../components/DataTable'
 import { ScanDetail } from '../components/ScanDetail'
 import api from '../api/client'
 
+interface AllowedDeviation {
+  file_type: string
+  entry_key: string
+  expected_value?: string
+  actual_value: string
+}
+
 interface Incident {
   id: string
   file_type: 'passwd' | 'group'
   entry_key: string
   actual_value: string
   expected_value?: string
-}
-
-interface AllowedDeviation {
-  file_type: string
-  entry_key: string
-  expected_value?: string
-  actual_value: string
 }
 
 interface HostResult {
@@ -34,12 +34,13 @@ interface ScanJob {
   status: string
 }
 
-interface ScanDetailData {
-  job: ScanJob
-  results: HostResult[]
+interface SelectedHost {
+  hostname: string
+  hostId: string
+  scanJobId: string
 }
 
-function ActiveJobBanner({ job }: { job?: ScanJob }) {
+function ActiveJobBanner({ job }: { job?: ScanJob | null }) {
   if (!job || (job.status !== 'running' && job.status !== 'initiating')) return null
   return (
     <div
@@ -68,48 +69,54 @@ function ActiveJobBanner({ job }: { job?: ScanJob }) {
 }
 
 export default function Dashboard() {
-  const [selectedHost, setSelectedHost] = useState<string | undefined>()
-  const [detail, setDetail] = useState<ScanDetailData | null>(null)
+  const [selected, setSelected] = useState<SelectedHost | null>(null)
+  const [job, setJob] = useState<ScanJob | null>(null)
+  const [hostDetail, setHostDetail] = useState<HostResult | null>(null)
   const [error, setError] = useState('')
 
+  // Only fetch the job list for the running-job banner; host data is loaded
+  // by DataTable (counts only) and per-host details on selection.
   useEffect(() => {
     api
       .get('/scans')
       .then((res) => {
         const scans: ScanJob[] = res.data || []
         const running = scans.find((s) => s.status === 'running' || s.status === 'initiating')
-        const latest = running || scans[0]
-        if (!latest) return
-        return api.get(`/scans/${latest.id}?include_incidents=true`)
-      })
-      .then((res) => {
-        if (res) {
-          const data: ScanDetailData = res.data
-          const results = (data.results || []).map((r) => ({
-            ...r,
-            incidents: r.incidents || [],
-            allowed_deviations: r.allowed_deviations || [],
-          }))
-          setDetail({ ...data, results })
-          if (results.length > 0) {
-            setSelectedHost(results[0].hostname)
-          }
-        }
+        setJob(running || scans[0] || null)
       })
       .catch((err) => setError(err.message))
   }, [])
 
-  const selectedResult = (detail?.results || []).find((r) => r.hostname === selectedHost)
+  // Load full incidents for the selected host on demand. This keeps the
+  // dashboard payload small even for scans with thousands of deviations.
+  useEffect(() => {
+    if (!selected) {
+      setHostDetail(null)
+      return
+    }
+    let cancelled = false
+    api
+      .get(`/scans/${selected.scanJobId}/hosts/${selected.hostId}`)
+      .then((res) => {
+        if (!cancelled) setHostDetail(res.data)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selected])
 
   return (
     <div className="flex flex-col gap-6">
       <SectionCards />
-      <ActiveJobBanner job={detail?.job} />
+      <ActiveJobBanner job={job} />
       {error && <div className="text-xs text-red-500">{error}</div>}
       <div className="scan-results-export">
-        <DataTable selectedHost={selectedHost} onSelectHost={setSelectedHost} />
+        <DataTable selectedHost={selected?.hostname} onSelectHost={setSelected} />
       </div>
-      {selectedResult && <ScanDetail host={selectedResult} />}
+      {hostDetail && <ScanDetail host={hostDetail} />}
       <div className="text-center text-xs text-muted-foreground py-2">Ulas Compliance Engine v0.1.0</div>
     </div>
   )

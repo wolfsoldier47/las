@@ -84,10 +84,11 @@ func (h *ScanHandler) GetScan(c *gin.Context) {
 	ctx := c.Request.Context()
 	page, limit, hasPagination := ParsePagination(c)
 	includeIncidents := c.Query("include_incidents") == "true"
+	onlyFailing := c.Query("only_failing") == "true"
 
 	var detail interface{}
 	if hasPagination {
-		detail, err = h.scanService.GetScanDetailPaginated(ctx, id, page, limit, includeIncidents)
+		detail, err = h.scanService.GetScanDetailPaginated(ctx, id, page, limit, includeIncidents, onlyFailing)
 	} else {
 		detail, err = h.scanService.GetScanDetail(ctx, id, includeIncidents)
 	}

@@ -32,7 +32,7 @@ func (f *fakeScanServiceForReport) ListScanJobsPaginated(context.Context, int, i
 func (f *fakeScanServiceForReport) GetScanDetail(context.Context, uuid.UUID, bool) (*ScanDetail, error) {
 	return f.detail, nil
 }
-func (f *fakeScanServiceForReport) GetScanDetailPaginated(context.Context, uuid.UUID, int, int, bool) (*PaginatedScanDetail, error) {
+func (f *fakeScanServiceForReport) GetScanDetailPaginated(context.Context, uuid.UUID, int, int, bool, bool) (*PaginatedScanDetail, error) {
 	return nil, nil
 }
 func (f *fakeScanServiceForReport) GetHostResult(context.Context, uuid.UUID, uuid.UUID) (*HostScanDetail, error) {

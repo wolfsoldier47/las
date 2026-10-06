@@ -44,7 +44,7 @@ func (f *fakeScanService) ListScanJobsPaginated(context.Context, int, int, bool,
 func (f *fakeScanService) GetScanDetail(context.Context, uuid.UUID, bool) (*service.ScanDetail, error) {
 	return nil, nil
 }
-func (f *fakeScanService) GetScanDetailPaginated(context.Context, uuid.UUID, int, int, bool) (*service.PaginatedScanDetail, error) {
+func (f *fakeScanService) GetScanDetailPaginated(context.Context, uuid.UUID, int, int, bool, bool) (*service.PaginatedScanDetail, error) {
 	return nil, nil
 }
 func (f *fakeScanService) GetHostResult(context.Context, uuid.UUID, uuid.UUID) (*service.HostScanDetail, error) {

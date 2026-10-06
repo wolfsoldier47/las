@@ -34,7 +34,7 @@ type ScanRepository interface {
 	GetScanResult(ctx context.Context, id uuid.UUID) (*models.ScanResult, error)
 	GetScanResultByJobAndHost(ctx context.Context, scanJobID, hostID uuid.UUID) (*models.ScanResult, error)
 	ListScanResultsByJobID(ctx context.Context, scanJobID uuid.UUID) ([]models.ScanResult, error)
-	ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int) ([]models.ScanResult, int, error)
+	ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, onlyFailing bool) ([]models.ScanResult, int, error)
 	UpdateScanResult(ctx context.Context, result *models.ScanResult) error
 
 	IncrementScanJobCounters(ctx context.Context, id uuid.UUID, callbacks, successful, failed int) error
@@ -601,7 +601,8 @@ func (r *PgScanRepository) ListScanResultsByJobID(ctx context.Context, scanJobID
 }
 
 // ListScanResultsByJobIDPaginated returns a page of scan results plus the total count.
-func (r *PgScanRepository) ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int) ([]models.ScanResult, int, error) {
+// When onlyFailing is set, only results with deviations are returned.
+func (r *PgScanRepository) ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, onlyFailing bool) ([]models.ScanResult, int, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -610,8 +611,13 @@ func (r *PgScanRepository) ListScanResultsByJobIDPaginated(ctx context.Context, 
 	}
 	offset := (page - 1) * limit
 
+	failingClause := ""
+	if onlyFailing {
+		failingClause = " AND (deviations_found > 0 OR status = '" + string(models.ScanResultStatusDeviationFound) + "')"
+	}
+
 	var total int
-	countQuery := `SELECT COUNT(*) FROM scan_results WHERE scan_job_id = $1`
+	countQuery := `SELECT COUNT(*) FROM scan_results WHERE scan_job_id = $1` + failingClause
 	if err := r.db.QueryRowContext(ctx, countQuery, scanJobID).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count scan results: %w", err)
 	}
@@ -621,7 +627,7 @@ func (r *PgScanRepository) ListScanResultsByJobIDPaginated(ctx context.Context, 
 		       deviations_found, allowed_deviations, baseline_version_at_scan, no_baseline,
 		       received_at, processed_at, created_at
 		FROM scan_results
-		WHERE scan_job_id = $1
+		WHERE scan_job_id = $1` + failingClause + `
 		ORDER BY created_at
 		LIMIT $2 OFFSET $3
 	`

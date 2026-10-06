@@ -121,7 +121,7 @@ func (r *testScanRepo) ListScanResultsByJobID(ctx context.Context, scanJobID uui
 	}
 	return out, nil
 }
-func (r *testScanRepo) ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int) ([]models.ScanResult, int, error) {
+func (r *testScanRepo) ListScanResultsByJobIDPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, onlyFailing bool) ([]models.ScanResult, int, error) {
 	return nil, 0, nil
 }
 func (r *testScanRepo) UpdateScanResult(ctx context.Context, result *models.ScanResult) error {

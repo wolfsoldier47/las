@@ -25,6 +25,7 @@ type HostRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Host, error)
 	GetByHostname(ctx context.Context, hostname string) (*models.Host, error)
 	List(ctx context.Context) ([]models.Host, error)
+	ListByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Host, error)
 	ListPaginated(ctx context.Context, filters HostFilters, page, limit int) ([]models.Host, int, error)
 	Update(ctx context.Context, host *models.Host) error
 	Delete(ctx context.Context, id uuid.UUID) error
@@ -134,6 +135,49 @@ func (r *PgHostRepository) List(ctx context.Context) ([]models.Host, error) {
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("list hosts: %w", err)
+	}
+	defer rows.Close()
+
+	var hosts []models.Host
+	for rows.Next() {
+		var host models.Host
+		if err := rows.Scan(
+			&host.ID,
+			&host.Hostname,
+			&host.OSType,
+			&host.OSName,
+			&host.OSVersion,
+			&host.Environment,
+			&host.Datacenter,
+			&host.Description,
+			&host.CreatedAt,
+			&host.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan host: %w", err)
+		}
+		hosts = append(hosts, host)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate hosts: %w", err)
+	}
+	return hosts, nil
+}
+
+// ListByIDs returns hosts matching a set of IDs in a single query.
+func (r *PgHostRepository) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Host, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders, args := uuidPlaceholders(1, ids)
+	query := `
+		SELECT id, hostname, os_type, os_name, os_version, environment, datacenter, description, created_at, updated_at
+		FROM hosts
+		WHERE id IN ` + placeholders + `
+	`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list hosts by ids: %w", err)
 	}
 	defer rows.Close()
 

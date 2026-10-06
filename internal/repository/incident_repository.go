@@ -19,6 +19,10 @@ type IncidentRepository interface {
 	Create(ctx context.Context, incident *models.Incident) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Incident, error)
 	List(ctx context.Context, filters IncidentFilters) ([]models.Incident, error)
+	ListByScanJobID(ctx context.Context, scanJobID uuid.UUID) ([]models.Incident, error)
+	ListByScanResultIDs(ctx context.Context, ids []uuid.UUID) ([]models.Incident, error)
+	CountByScanJobID(ctx context.Context, scanJobID uuid.UUID) ([]IncidentCount, error)
+	CountByScanResultIDs(ctx context.Context, ids []uuid.UUID) ([]IncidentCount, error)
 	Update(ctx context.Context, incident *models.Incident) error
 }
 
@@ -29,6 +33,20 @@ type IncidentFilters struct {
 	ScanResultID *uuid.UUID
 	ScanJobID    *uuid.UUID
 }
+
+// IncidentCount aggregates incident totals for one scan result and file type.
+type IncidentCount struct {
+	ScanResultID uuid.UUID
+	FileType     models.FileType
+	Total        int
+	// Open is the number of incidents without a ServiceNow ticket.
+	Open int
+}
+
+// incidentColumns is the shared SELECT column list for incident queries.
+const incidentColumns = `id, incident_number, scan_result_id, host_id, file_type, entry_key, expected_value,
+	actual_value, baseline_version_at_scan, severity, status, notes,
+	service_now_ticket_opened, resolution, created_at, updated_at`
 
 // PgIncidentRepository is a PostgreSQL implementation of IncidentRepository.
 type PgIncidentRepository struct {
@@ -183,6 +201,129 @@ func (r *PgIncidentRepository) List(ctx context.Context, filters IncidentFilters
 		return nil, fmt.Errorf("iterate incidents: %w", err)
 	}
 	return incidents, nil
+}
+
+// ListByScanJobID returns every incident for a scan job in a single query.
+func (r *PgIncidentRepository) ListByScanJobID(ctx context.Context, scanJobID uuid.UUID) ([]models.Incident, error) {
+	query := `
+		SELECT ` + incidentColumns + `
+		FROM incidents
+		WHERE scan_result_id IN (SELECT id FROM scan_results WHERE scan_job_id = $1)
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, scanJobID)
+	if err != nil {
+		return nil, fmt.Errorf("list incidents by scan job: %w", err)
+	}
+	defer rows.Close()
+	return scanIncidents(rows)
+}
+
+// ListByScanResultIDs returns incidents for a set of scan results in a single query.
+func (r *PgIncidentRepository) ListByScanResultIDs(ctx context.Context, ids []uuid.UUID) ([]models.Incident, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders, args := uuidPlaceholders(1, ids)
+	query := `
+		SELECT ` + incidentColumns + `
+		FROM incidents
+		WHERE scan_result_id IN ` + placeholders + `
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list incidents by scan results: %w", err)
+	}
+	defer rows.Close()
+	return scanIncidents(rows)
+}
+
+// CountByScanJobID returns per-file-type incident totals for a whole scan job.
+func (r *PgIncidentRepository) CountByScanJobID(ctx context.Context, scanJobID uuid.UUID) ([]IncidentCount, error) {
+	query := `
+		SELECT scan_result_id, file_type, COUNT(*),
+		       COUNT(*) FILTER (WHERE NOT service_now_ticket_opened)
+		FROM incidents
+		WHERE scan_result_id IN (SELECT id FROM scan_results WHERE scan_job_id = $1)
+		GROUP BY scan_result_id, file_type
+	`
+	rows, err := r.db.QueryContext(ctx, query, scanJobID)
+	if err != nil {
+		return nil, fmt.Errorf("count incidents by scan job: %w", err)
+	}
+	defer rows.Close()
+	return scanIncidentCounts(rows)
+}
+
+// CountByScanResultIDs returns per-file-type incident totals for a set of scan results.
+func (r *PgIncidentRepository) CountByScanResultIDs(ctx context.Context, ids []uuid.UUID) ([]IncidentCount, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	placeholders, args := uuidPlaceholders(1, ids)
+	query := `
+		SELECT scan_result_id, file_type, COUNT(*),
+		       COUNT(*) FILTER (WHERE NOT service_now_ticket_opened)
+		FROM incidents
+		WHERE scan_result_id IN ` + placeholders + `
+		GROUP BY scan_result_id, file_type
+	`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("count incidents by scan results: %w", err)
+	}
+	defer rows.Close()
+	return scanIncidentCounts(rows)
+}
+
+// scanIncidents reads all incidents from a rows result.
+func scanIncidents(rows *sql.Rows) ([]models.Incident, error) {
+	var incidents []models.Incident
+	for rows.Next() {
+		var incident models.Incident
+		if err := rows.Scan(
+			&incident.ID,
+			&incident.IncidentNumber,
+			&incident.ScanResultID,
+			&incident.HostID,
+			&incident.FileType,
+			&incident.EntryKey,
+			&incident.ExpectedValue,
+			&incident.ActualValue,
+			&incident.BaselineVersionAtScan,
+			&incident.Severity,
+			&incident.Status,
+			&incident.Notes,
+			&incident.ServiceNowTicketOpened,
+			&incident.Resolution,
+			&incident.CreatedAt,
+			&incident.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan incident: %w", err)
+		}
+		incidents = append(incidents, incident)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate incidents: %w", err)
+	}
+	return incidents, nil
+}
+
+// scanIncidentCounts reads aggregated incident counts from a rows result.
+func scanIncidentCounts(rows *sql.Rows) ([]IncidentCount, error) {
+	var counts []IncidentCount
+	for rows.Next() {
+		var c IncidentCount
+		if err := rows.Scan(&c.ScanResultID, &c.FileType, &c.Total, &c.Open); err != nil {
+			return nil, fmt.Errorf("scan incident count: %w", err)
+		}
+		counts = append(counts, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate incident counts: %w", err)
+	}
+	return counts, nil
 }
 
 // Update modifies an existing incident.

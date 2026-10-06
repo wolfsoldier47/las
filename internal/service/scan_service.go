@@ -31,7 +31,7 @@ type ScanService interface {
 	ListScanJobs(ctx context.Context) ([]models.ScanJob, error)
 	ListScanJobsPaginated(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) (*PaginatedScanJobs, error)
 	GetScanDetail(ctx context.Context, scanJobID uuid.UUID, includeIncidents bool) (*ScanDetail, error)
-	GetScanDetailPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, includeIncidents bool) (*PaginatedScanDetail, error)
+	GetScanDetailPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, includeIncidents, onlyFailing bool) (*PaginatedScanDetail, error)
 	GetHostResult(ctx context.Context, scanJobID, hostID uuid.UUID) (*HostScanDetail, error)
 	GetScanJobByAnsibleJobID(ctx context.Context, ansibleJobID string) (*models.ScanJob, error)
 	PollActiveScans(ctx context.Context) error
@@ -71,6 +71,18 @@ type HostScanDetail struct {
 	Environment string            `json:"environment,omitempty"`
 	Datacenter  string            `json:"datacenter,omitempty"`
 	Incidents   []models.Incident `json:"incidents"`
+	// IncidentCounts is a lightweight per-host summary that avoids shipping
+	// full incident rows in list responses.
+	IncidentCounts *IncidentCounts `json:"incident_counts,omitempty"`
+}
+
+// IncidentCounts summarizes a host's incidents by file type.
+type IncidentCounts struct {
+	Passwd int `json:"passwd"`
+	Group  int `json:"group"`
+	Total  int `json:"total"`
+	// Open is the number of incidents without a ServiceNow ticket.
+	Open int `json:"open"`
 }
 
 // callbackJob is a unit of work queued by ProcessCallbackEnvelope for the
@@ -470,7 +482,7 @@ func (s *DefaultScanService) GetScanDetail(ctx context.Context, scanJobID uuid.U
 		return nil, fmt.Errorf("list scan results: %w", err)
 	}
 
-	details, err := s.buildHostScanDetails(ctx, results, includeIncidents)
+	details, err := s.buildHostScanDetails(ctx, scanJobID, results, includeIncidents, true)
 	if err != nil {
 		return nil, err
 	}
@@ -482,19 +494,20 @@ func (s *DefaultScanService) GetScanDetail(ctx context.Context, scanJobID uuid.U
 }
 
 // GetScanDetailPaginated returns a paginated scan job with its per-host results.
-// Incidents are only included when includeIncidents is true.
-func (s *DefaultScanService) GetScanDetailPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, includeIncidents bool) (*PaginatedScanDetail, error) {
+// Incidents are only included when includeIncidents is true. When onlyFailing
+// is set, only hosts with deviations are returned.
+func (s *DefaultScanService) GetScanDetailPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, includeIncidents, onlyFailing bool) (*PaginatedScanDetail, error) {
 	job, err := s.scanRepo.GetScanJobByID(ctx, scanJobID)
 	if err != nil {
 		return nil, fmt.Errorf("get scan job: %w", err)
 	}
 
-	results, total, err := s.scanRepo.ListScanResultsByJobIDPaginated(ctx, scanJobID, page, limit)
+	results, total, err := s.scanRepo.ListScanResultsByJobIDPaginated(ctx, scanJobID, page, limit, onlyFailing)
 	if err != nil {
 		return nil, fmt.Errorf("list scan results paginated: %w", err)
 	}
 
-	details, err := s.buildHostScanDetails(ctx, results, includeIncidents)
+	details, err := s.buildHostScanDetails(ctx, scanJobID, results, includeIncidents, false)
 	if err != nil {
 		return nil, err
 	}
@@ -545,43 +558,105 @@ func (s *DefaultScanService) GetHostResult(ctx context.Context, scanJobID, hostI
 	}, nil
 }
 
-// buildHostScanDetails builds host results, optionally loading incidents per host.
-func (s *DefaultScanService) buildHostScanDetails(ctx context.Context, results []models.ScanResult, includeIncidents bool) ([]HostScanDetail, error) {
-	hostCache := make(map[uuid.UUID]*models.Host)
+// buildHostScanDetails builds host results. Hosts, incident counts, and
+// (optionally) incidents are loaded in a constant number of batch queries
+// instead of one query per host. When jobScoped is true the queries cover the
+// whole scan job (used by the unpaginated detail/report path); otherwise they
+// cover just the given results (paginated path).
+func (s *DefaultScanService) buildHostScanDetails(ctx context.Context, scanJobID uuid.UUID, results []models.ScanResult, includeIncidents, jobScoped bool) ([]HostScanDetail, error) {
+	resultIDs := make([]uuid.UUID, len(results))
+	hostIDs := make([]uuid.UUID, 0, len(results))
+	seenHosts := make(map[uuid.UUID]bool)
+	for i := range results {
+		resultIDs[i] = results[i].ID
+		if !seenHosts[results[i].HostID] {
+			seenHosts[results[i].HostID] = true
+			hostIDs = append(hostIDs, results[i].HostID)
+		}
+	}
+
+	// Batch-load hosts; fall back to "unknown" per host if the batch fails.
+	hostMap := make(map[uuid.UUID]*models.Host, len(hostIDs))
+	if len(hostIDs) > 0 {
+		hosts, err := s.hostRepo.ListByIDs(ctx, hostIDs)
+		if err != nil {
+			slog.Warn("batch host load failed, hostnames will show as unknown", "error", err)
+		} else {
+			for i := range hosts {
+				hostMap[hosts[i].ID] = &hosts[i]
+			}
+		}
+	}
+
+	// Batch-load per-host incident counts (cheap GROUP BY).
+	var countRows []repository.IncidentCount
+	var err error
+	if jobScoped {
+		countRows, err = s.incidentRepo.CountByScanJobID(ctx, scanJobID)
+	} else {
+		countRows, err = s.incidentRepo.CountByScanResultIDs(ctx, resultIDs)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("count incidents: %w", err)
+	}
+	countsByResult := make(map[uuid.UUID]*IncidentCounts, len(countRows))
+	for _, c := range countRows {
+		ic := countsByResult[c.ScanResultID]
+		if ic == nil {
+			ic = &IncidentCounts{}
+			countsByResult[c.ScanResultID] = ic
+		}
+		ic.Total += c.Total
+		ic.Open += c.Open
+		switch c.FileType {
+		case models.FileTypePasswd:
+			ic.Passwd += c.Total
+		case models.FileTypeGroup:
+			ic.Group += c.Total
+		}
+	}
+
+	// Batch-load full incidents only when the caller asks for them.
+	incidentsByResult := make(map[uuid.UUID][]models.Incident)
+	if includeIncidents {
+		var incidents []models.Incident
+		if jobScoped {
+			incidents, err = s.incidentRepo.ListByScanJobID(ctx, scanJobID)
+		} else {
+			incidents, err = s.incidentRepo.ListByScanResultIDs(ctx, resultIDs)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("list incidents: %w", err)
+		}
+		for i := range incidents {
+			incidentsByResult[incidents[i].ScanResultID] = append(incidentsByResult[incidents[i].ScanResultID], incidents[i])
+		}
+	}
+
 	var details []HostScanDetail
 	for i := range results {
 		result := &results[i]
-		host, ok := hostCache[result.HostID]
+
+		host, ok := hostMap[result.HostID]
 		if !ok {
-			var err error
-			host, err = s.hostRepo.GetByID(ctx, result.HostID)
-			if err != nil {
-				host = &models.Host{Hostname: "unknown"}
-			}
-			hostCache[result.HostID] = host
+			host = &models.Host{Hostname: "unknown"}
 		}
 
-		var incidents []models.Incident
-		if includeIncidents {
-			var err error
-			incidents, err = s.incidentRepo.List(ctx, repository.IncidentFilters{ScanResultID: &result.ID})
-			if err != nil {
-				return nil, fmt.Errorf("list incidents: %w", err)
-			}
-		}
+		incidents := incidentsByResult[result.ID]
 		if incidents == nil {
 			incidents = []models.Incident{}
 		}
 
 		details = append(details, HostScanDetail{
-			ScanResult:  *result,
-			HostID:      result.HostID,
-			Hostname:    host.Hostname,
-			OSType:      string(host.OSType),
-			OSVersion:   host.OSVersion,
-			Environment: host.Environment,
-			Datacenter:  host.Datacenter,
-			Incidents:   incidents,
+			ScanResult:     *result,
+			HostID:         result.HostID,
+			Hostname:       host.Hostname,
+			OSType:         string(host.OSType),
+			OSVersion:      host.OSVersion,
+			Environment:    host.Environment,
+			Datacenter:     host.Datacenter,
+			Incidents:      incidents,
+			IncidentCounts: countsByResult[result.ID],
 		})
 	}
 	return details, nil

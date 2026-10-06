@@ -14,12 +14,21 @@ interface Incident {
   service_now_ticket_opened: boolean
 }
 
+interface IncidentCounts {
+  passwd: number
+  group: number
+  total: number
+  open: number
+}
+
 interface HostResult {
   id: string
+  host_id: string
   hostname: string
   status: string
   deviations_found: number
   incidents: Incident[]
+  incident_counts?: IncidentCounts
 }
 
 interface ScanJob {
@@ -44,6 +53,9 @@ interface PaginatedScanJobs {
 interface ScanDetailData {
   job: ScanJob
   results: HostResult[]
+  total: number
+  page: number
+  limit: number
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -77,6 +89,14 @@ export default function IncidentsPage() {
   const [pageSize, setPageSize] = useState(10)
   const [totalScans, setTotalScans] = useState(0)
 
+  // Failing-hosts pagination within the selected scan.
+  const [hostPage, setHostPage] = useState(1)
+  const hostPageSize = 25
+  // Full per-host incidents are loaded on demand when a host row is expanded.
+  const [expandedHostId, setExpandedHostId] = useState<string | null>(null)
+  const [hostDetails, setHostDetails] = useState<Record<string, HostResult>>({})
+  const [hostDetailLoading, setHostDetailLoading] = useState(false)
+
   const fetchScans = (nextPage = page, nextSize = pageSize, nextSearch = search) => {
     api
       .get(`/scans?page=${nextPage}&limit=${nextSize}&search=${encodeURIComponent(nextSearch)}`)
@@ -97,13 +117,9 @@ export default function IncidentsPage() {
     fetchScans()
   }, [page, pageSize, search])
 
-  const loadScanDetail = (scanId: string) => {
-    setSelectedScanId(scanId)
-    setDetail(null)
-    setTicketError('')
-    setTicketSuccess('')
+  const loadScanDetail = (scanId: string, nextPage = hostPage, nextSize = hostPageSize) => {
     api
-      .get(`/scans/${scanId}?include_incidents=true`)
+      .get(`/scans/${scanId}?page=${nextPage}&limit=${nextSize}&only_failing=true`)
       .then((res) => {
         const data: ScanDetailData = res.data
         setDetail({ ...data, results: data.results || [] })
@@ -111,23 +127,74 @@ export default function IncidentsPage() {
       .catch((err) => setError(err.message))
   }
 
+  useEffect(() => {
+    if (selectedScanId) {
+      loadScanDetail(selectedScanId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedScanId, hostPage, hostPageSize])
+
+  // Full incident rows for one host are only fetched when needed (expand or
+  // ticket action), so scans with thousands of deviations stay cheap to list.
+  const loadHostDetail = (scanId: string, hostResult: HostResult): Promise<HostResult> => {
+    const cached = hostDetails[hostResult.id]
+    if (cached) return Promise.resolve(cached)
+    setHostDetailLoading(true)
+    return api
+      .get(`/scans/${scanId}/hosts/${hostResult.host_id}`)
+      .then((res) => {
+        const data: HostResult = res.data
+        setHostDetails((prev) => ({ ...prev, [hostResult.id]: data }))
+        return data
+      })
+      .finally(() => setHostDetailLoading(false))
+  }
+
+  const toggleHostExpanded = (hostResult: HostResult) => {
+    if (!selectedScanId) return
+    if (expandedHostId === hostResult.id) {
+      setExpandedHostId(null)
+      return
+    }
+    setExpandedHostId(hostResult.id)
+    if (!hostDetails[hostResult.id]) {
+      loadHostDetail(selectedScanId, hostResult).catch((err) => setError(err.message))
+    }
+  }
+
   const openHostTickets = (hostResult: HostResult) => {
+    if (!selectedScanId) return
     setTicketError('')
     setTicketSuccess('')
-    const incidentIds = hostResult.incidents.filter((i) => !i.service_now_ticket_opened).map((i) => i.id)
-    if (incidentIds.length === 0) return
-    api
-      .post('/incidents/bulk-servicenow', { incident_ids: incidentIds })
-      .then(() => {
-        setTicketSuccess(`Opened ${incidentIds.length} ServiceNow ticket(s) for ${hostResult.hostname}`)
-        if (selectedScanId) loadScanDetail(selectedScanId)
+    loadHostDetail(selectedScanId, hostResult)
+      .then((hostDetail) => {
+        const incidentIds = (hostDetail.incidents || [])
+          .filter((i) => !i.service_now_ticket_opened)
+          .map((i) => i.id)
+        if (incidentIds.length === 0) return
+        return api
+          .post('/incidents/bulk-servicenow', { incident_ids: incidentIds })
+          .then(() => {
+            setTicketSuccess(`Opened ${incidentIds.length} ServiceNow ticket(s) for ${hostResult.hostname}`)
+            setHostDetails((prev) => {
+              const updated: HostResult = { ...(prev[hostResult.id] || hostResult) }
+              updated.incidents = (updated.incidents || []).map((i) => ({
+                ...i,
+                service_now_ticket_opened: true,
+              }))
+              return { ...prev, [hostResult.id]: updated }
+            })
+            loadScanDetail(selectedScanId)
+          })
       })
       .catch((err) => setTicketError(err.response?.data?.error || err.message))
   }
 
-  const failingHosts = detail?.results.filter(
-    (r) => r.status === 'deviation_found' || r.deviations_found > 0 || r.incidents.length > 0
-  ) || []
+  // The backend filters to failing hosts when only_failing=true, so the
+  // paginated results are already the failing set.
+  const failingHosts = detail?.results || []
+  const totalFailingHosts = detail?.total ?? 0
+  const totalHostPages = Math.max(1, Math.ceil(totalFailingHosts / hostPageSize))
 
   const totalPages = Math.max(1, Math.ceil(totalScans / pageSize))
   const admin = isAdmin()
@@ -185,7 +252,15 @@ export default function IncidentsPage() {
               {scans.map((scan) => (
                 <tr
                   key={scan.id}
-                  onClick={() => loadScanDetail(scan.id)}
+                  onClick={() => {
+                    setSelectedScanId(scan.id)
+                    setHostPage(1)
+                    setDetail(null)
+                    setExpandedHostId(null)
+                    setHostDetails({})
+                    setTicketError('')
+                    setTicketSuccess('')
+                  }}
                   className={`border-b border-border/50 transition-colors cursor-pointer ${
                     selectedScanId === scan.id ? 'bg-primary/10' : 'hover:bg-primary/[0.03]'
                   }`}
@@ -260,88 +335,108 @@ export default function IncidentsPage() {
                 </thead>
                 <tbody>
                   {failingHosts.map((result) => {
-                    const openIncidents = result.incidents.filter((i) => !i.service_now_ticket_opened)
+                    const openCount = result.incident_counts?.open ?? 0
+                    const expanded = expandedHostId === result.id
+                    const hostDetail = hostDetails[result.id]
                     return (
-                      <tr key={result.id} className="border-b border-border/50 transition-colors hover:bg-primary/[0.03]">
-                        <td className="px-5 py-3 text-foreground font-medium font-mono text-xs">{result.hostname}</td>
-                        <td className="px-5 py-3"><StatusBadge status={result.status} /></td>
-                        <td className="px-5 py-3 text-right text-red-500 text-xs font-medium">{result.deviations_found}</td>
-                        <td className="px-5 py-3">
-                          {openIncidents.length > 0 ? (
-                            admin ? (
-                              <button
-                                onClick={() => openHostTickets(result)}
-                                className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
-                              >
-                                Open Host Ticket
-                              </button>
+                      <>
+                        <tr
+                          key={result.id}
+                          onClick={() => toggleHostExpanded(result)}
+                          className="border-b border-border/50 transition-colors hover:bg-primary/[0.03] cursor-pointer"
+                        >
+                          <td className="px-5 py-3 text-foreground font-medium font-mono text-xs">
+                            <span className={`inline-block transition-transform mr-1 ${expanded ? 'rotate-90' : ''}`}>▶</span>
+                            {result.hostname}
+                          </td>
+                          <td className="px-5 py-3"><StatusBadge status={result.status} /></td>
+                          <td className="px-5 py-3 text-right text-red-500 text-xs font-medium">{result.deviations_found}</td>
+                          <td className="px-5 py-3">
+                            {openCount > 0 ? (
+                              admin ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    openHostTickets(result)
+                                  }}
+                                  className="px-3 py-1 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
+                                >
+                                  Open Host Ticket ({openCount})
+                                </button>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">{openCount} open</span>
+                              )
                             ) : (
-                              <span className="text-xs text-muted-foreground">—</span>
-                            )
-                          ) : (
-                            <span className="text-xs text-muted-foreground">All tickets opened</span>
-                          )}
-                        </td>
-                      </tr>
+                              <span className="text-xs text-muted-foreground">All tickets opened</span>
+                            )}
+                          </td>
+                        </tr>
+                        {expanded && (
+                          <tr key={`${result.id}-incidents`} className="border-b border-border/50">
+                            <td colSpan={4} className="px-5 py-3">
+                              {hostDetailLoading && !hostDetail ? (
+                                <div className="text-xs text-muted-foreground">Loading incidents...</div>
+                              ) : !hostDetail ? (
+                                <div className="text-xs text-muted-foreground">No incident data.</div>
+                              ) : (
+                                <div className="overflow-auto max-h-[50vh]">
+                                  <table className="w-full text-sm">
+                                    <thead className="sticky top-0 bg-card z-10">
+                                      <tr className="border-b border-border">
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Number</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Entry</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Expected</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Actual</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Severity</th>
+                                        <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {(hostDetail.incidents || []).map((incident) => (
+                                        <tr key={incident.id} className="border-b border-border/50">
+                                          <td className="px-3 py-2 text-foreground font-mono text-xs">{incident.incident_number}</td>
+                                          <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{incident.entry_key}</td>
+                                          <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{incident.expected_value || '-'}</td>
+                                          <td className="px-3 py-2 text-muted-foreground font-mono text-xs">{incident.actual_value}</td>
+                                          <td className="px-3 py-2 text-muted-foreground text-xs">{incident.severity}</td>
+                                          <td className="px-3 py-2 text-muted-foreground text-xs">{incident.status}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     )
                   })}
                 </tbody>
               </table>
+              {totalFailingHosts > hostPageSize && (
+                <div className="px-5 py-3 border-t border-border flex justify-end items-center gap-2">
+                  <button
+                    onClick={() => setHostPage((p) => Math.max(1, p - 1))}
+                    disabled={hostPage <= 1}
+                    className="px-3 py-1.5 border border-border rounded-lg text-xs disabled:opacity-50 hover:bg-secondary transition-all"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {hostPage} of {totalHostPages} ({totalFailingHosts} hosts)
+                  </span>
+                  <button
+                    onClick={() => setHostPage((p) => Math.min(totalHostPages, p + 1))}
+                    disabled={hostPage >= totalHostPages}
+                    className="px-3 py-1.5 border border-border rounded-lg text-xs disabled:opacity-50 hover:bg-secondary transition-all"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
-
-      {selectedScanId && detail && failingHosts.length > 0 && (
-        <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto pr-1">
-          {failingHosts.map((result) => (
-            <div key={result.id} className="bg-card border border-border rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-border flex justify-between items-center">
-                <div>
-                  <div className="font-semibold text-sm text-foreground">Incidents for {result.hostname}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">{result.incidents.length} incident(s)</div>
-                </div>
-                {admin && result.incidents.some((i) => !i.service_now_ticket_opened) && (
-                  <button
-                    onClick={() => openHostTickets(result)}
-                    className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
-                  >
-                    Open Host Ticket
-                  </button>
-                )}
-              </div>
-              <div className="overflow-auto max-h-[50vh]">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-card z-10">
-                    <tr className="border-b border-border">
-                      <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Number</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Entry</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Expected</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Actual</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Severity</th>
-                      <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Status</th>
-                      <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.incidents.map((incident) => (
-                      <tr key={incident.id} className="border-b border-border/50 transition-colors hover:bg-primary/[0.03]">
-                        <td className="px-5 py-3 text-foreground font-mono text-xs">{incident.incident_number}</td>
-                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{incident.entry_key}</td>
-                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{incident.expected_value || '-'}</td>
-                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{incident.actual_value}</td>
-                        <td className="px-5 py-3 text-muted-foreground text-xs">{incident.severity}</td>
-                        <td className="px-5 py-3 text-muted-foreground text-xs">{incident.status}</td>
-                        <td className="px-5 py-3 text-right">
-
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ))}
         </div>
       )}
     </div>
