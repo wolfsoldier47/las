@@ -5654,3 +5654,16 @@
 {"time":"2026-09-23T23:15:35.235436015+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
 {"time":"2026-09-23T23:16:35.241014496+08:00","level":"INFO","msg":"triggering scheduled scan","schedule_id":"7105d975-935b-4db4-a5ce-d37c56cbe068","name":"test","frequency":"daily","limit":"test","target_os":"linux"}
 {"time":"2026-09-23T23:16:36.284109651+08:00","level":"ERROR","msg":"scheduled scan failed","schedule_id":"7105d975-935b-4db4-a5ce-d37c56cbe068","name":"test","error":"resolve template \"ulas\": unexpected status 503: <html error page>"}
+{"time":"2026-10-06T22:24:09.375233169+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-10-06T22:24:09.897866358+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-10-06T22:24:09.898460625+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-10-06T22:24:39.908556257+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 14, name \"error_message\": converting NULL to string is unsupported"}
+{"time":"2026-10-06T22:25:09.928913989+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 14, name \"error_message\": converting NULL to string is unsupported"}
+{"time":"2026-10-06T22:25:39.908320038+08:00","level":"ERROR","msg":"scan poll failed","error":"list scan jobs: scan scan job: sql: Scan error on column index 14, name \"error_message\": converting NULL to string is unsupported"}
+{"time":"2026-10-06T22:26:01.58199485+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-10-06T22:26:01.844543999+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-10-06T22:26:01.845165036+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-10-06T22:27:25.742576589+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-10-06T22:27:26.016247742+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-10-06T22:27:26.017025186+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-10-06T22:27:26.017356044+08:00","level":"ERROR","msg":"server error","error":"listen tcp :8080: bind: address already in use"}
