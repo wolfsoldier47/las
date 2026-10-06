@@ -113,13 +113,13 @@ func main() {
 func seedBaselines(ctx context.Context, baselineRepo repository.BaselineRepository) error {
 	entries := []models.MasterBaseline{
 		// /etc/passwd baseline for RHEL 8.
-		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypePasswd, EntryKey: "root", EntryValue: "x:0:0:root:/root:/bin/bash", Version: 8, IsActive: true, CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypePasswd, EntryKey: "bin", EntryValue: "x:1:1:bin:/bin:/sbin/nologin", Version: 8, IsActive: true, CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypePasswd, EntryKey: "root", EntryValue: "x:0:0:root:/root:/bin/bash", Version: 8, IsActive: true, ApprovalStatus: "approved", CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypePasswd, EntryKey: "bin", EntryValue: "x:1:1:bin:/bin:/sbin/nologin", Version: 8, IsActive: true, ApprovalStatus: "approved", CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 		// /etc/group baseline for RHEL 8. Values are stored without trailing colons
 		// because the comparison parser normalizes group snapshots that way.
-		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypeGroup, EntryKey: "root", EntryValue: "x:0", Version: 8, IsActive: true, CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypeGroup, EntryKey: "bin", EntryValue: "x:1", Version: 8, IsActive: true, CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
-		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypeGroup, EntryKey: "daemon", EntryValue: "x:2", Version: 8, IsActive: true, CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypeGroup, EntryKey: "root", EntryValue: "x:0", Version: 8, IsActive: true, ApprovalStatus: "approved", CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypeGroup, EntryKey: "bin", EntryValue: "x:1", Version: 8, IsActive: true, ApprovalStatus: "approved", CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		{ID: uuid.New(), OSType: models.OSTypeLinux, FileType: models.FileTypeGroup, EntryKey: "daemon", EntryValue: "x:2", Version: 8, IsActive: true, ApprovalStatus: "approved", CreatedBy: "seed", CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 	}
 
 	for i := range entries {

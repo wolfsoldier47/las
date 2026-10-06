@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import Deviations from './pages/Deviations'
+import ApprovalsPage from './pages/ApprovalsPage'
 import History from './pages/History'
 import HostsPage from './pages/HostsPage'
 import BaselinesPage from './pages/BaselinesPage'
@@ -43,6 +44,7 @@ function AppContent() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/deviations" element={<Deviations />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
             <Route path="/history" element={<History />} />
             <Route path="/hosts" element={<HostsPage />} />
             <Route path="/baselines" element={<BaselinesPage />} />

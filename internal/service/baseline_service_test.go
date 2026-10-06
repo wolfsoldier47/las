@@ -1,11 +1,207 @@
 package service
 
 import (
+	"context"
+	"errors"
+	"strconv"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"ulas-service/internal/repository"
 	"ulas-service/models"
 )
+
+// memBaselineRepoForService is an in-memory BaselineRepository for service-level tests.
+type memBaselineRepoForService struct {
+	creators     map[string]string
+	approveCalls []baselineApproveCall
+}
+
+type baselineApproveCall struct {
+	osType   models.OSType
+	fileType models.FileType
+	version  int
+	approver string
+}
+
+func baselineScopeKey(osType models.OSType, fileType models.FileType, version int) string {
+	return string(osType) + "/" + string(fileType) + "/" + strconv.Itoa(version)
+}
+
+func (r *memBaselineRepoForService) Create(ctx context.Context, baseline *models.MasterBaseline) error {
+	return nil
+}
+func (r *memBaselineRepoForService) GetByID(ctx context.Context, id uuid.UUID) (*models.MasterBaseline, error) {
+	return nil, repository.ErrBaselineNotFound
+}
+func (r *memBaselineRepoForService) List(ctx context.Context, filters repository.BaselineFilters) ([]models.MasterBaseline, error) {
+	return nil, nil
+}
+func (r *memBaselineRepoForService) Update(ctx context.Context, baseline *models.MasterBaseline) error {
+	return nil
+}
+func (r *memBaselineRepoForService) Delete(ctx context.Context, id uuid.UUID) error { return nil }
+func (r *memBaselineRepoForService) CreateVersion(ctx context.Context, version *models.MasterBaselineVersion) error {
+	return nil
+}
+func (r *memBaselineRepoForService) CreateVersionedEntries(ctx context.Context, osType models.OSType, fileType models.FileType, version int, entries []repository.BaselineEntryInput, createdBy, description string, active bool) error {
+	return nil
+}
+func (r *memBaselineRepoForService) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
+	return nil
+}
+func (r *memBaselineRepoForService) DeactivateScope(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
+	return nil
+}
+func (r *memBaselineRepoForService) ListVersions(ctx context.Context) ([]repository.BaselineVersionSummary, error) {
+	return nil, nil
+}
+func (r *memBaselineRepoForService) ListVersionsPaginated(ctx context.Context, page, limit int) ([]repository.BaselineVersionSummary, int, error) {
+	return nil, 0, nil
+}
+func (r *memBaselineRepoForService) ListPendingVersions(ctx context.Context) ([]repository.BaselineVersionSummary, error) {
+	return nil, nil
+}
+func (r *memBaselineRepoForService) ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) (int64, error) {
+	r.approveCalls = append(r.approveCalls, baselineApproveCall{osType: osType, fileType: fileType, version: version, approver: approver})
+	return 1, nil
+}
+func (r *memBaselineRepoForService) GetVersionCreator(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (string, error) {
+	creator, ok := r.creators[baselineScopeKey(osType, fileType, version)]
+	if !ok {
+		return "", repository.ErrBaselineVersionNotFound
+	}
+	return creator, nil
+}
+
+func TestCreateBaseline_PendingAndInactive(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	baseline, err := svc.Create(ctx, CreateBaselineRequest{
+		OSType:      models.OSTypeLinux,
+		FileType:    models.FileTypePasswd,
+		EntryKey:    "root",
+		EntryValue:  "x:0:0:root:/root:/bin/bash",
+		Version:     7,
+		CreatedBy:   "alice",
+		Description: "initial",
+	})
+	if err != nil {
+		t.Fatalf("create should succeed: %v", err)
+	}
+	if baseline.IsActive {
+		t.Fatalf("new baseline should be inactive until approved")
+	}
+	if baseline.ApprovalStatus != "pending" {
+		t.Fatalf("expected approval status pending, got %q", baseline.ApprovalStatus)
+	}
+	if baseline.CreatedBy != "alice" {
+		t.Fatalf("expected created_by alice, got %q", baseline.CreatedBy)
+	}
+}
+
+func TestApproveBaselineVersion_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{
+		creators: map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypePasswd, 7): "alice"},
+	}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	err := svc.ApproveVersion(ctx, models.OSTypeLinux, models.FileTypePasswd, 7, "bob")
+	if err != nil {
+		t.Fatalf("approve by different user should succeed: %v", err)
+	}
+
+	if len(repo.approveCalls) != 1 {
+		t.Fatalf("expected 1 approve call, got %d", len(repo.approveCalls))
+	}
+	call := repo.approveCalls[0]
+	if call.approver != "bob" || call.osType != models.OSTypeLinux || call.fileType != models.FileTypePasswd || call.version != 7 {
+		t.Fatalf("unexpected approve call: %+v", call)
+	}
+}
+
+func TestApproveBaselineVersion_SelfApprovalRejected(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{
+		creators: map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypePasswd, 7): "alice"},
+	}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	err := svc.ApproveVersion(ctx, models.OSTypeLinux, models.FileTypePasswd, 7, "alice")
+	if err == nil {
+		t.Fatalf("expected self-approval to be rejected")
+	}
+	if err != ErrSelfApproval {
+		t.Fatalf("expected ErrSelfApproval, got %v", err)
+	}
+
+	// case-insensitive match must also be rejected
+	err = svc.ApproveVersion(ctx, models.OSTypeLinux, models.FileTypePasswd, 7, "ALICE")
+	if err != ErrSelfApproval {
+		t.Fatalf("expected ErrSelfApproval for case-insensitive match, got %v", err)
+	}
+
+	if len(repo.approveCalls) != 0 {
+		t.Fatalf("rejected approval must not call the repository, got %+v", repo.approveCalls)
+	}
+}
+
+func TestApproveBaselineVersion_UnknownScope(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	err := svc.ApproveVersion(ctx, models.OSTypeLinux, models.FileTypePasswd, 9, "bob")
+	if err == nil {
+		t.Fatalf("expected error for unknown scope")
+	}
+	if !errors.Is(err, repository.ErrBaselineVersionNotFound) {
+		t.Fatalf("expected ErrBaselineVersionNotFound, got %v", err)
+	}
+}
+
+func TestApproveBaselineVersion_ZeroRowsTreatedAsNotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{
+		creators: map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypePasswd, 7): "alice"},
+	}
+	svc := NewDefaultBaselineService(approveZeroRowsRepo{repo}, nil)
+
+	err := svc.ApproveVersion(ctx, models.OSTypeLinux, models.FileTypePasswd, 7, "bob")
+	if err == nil {
+		t.Fatalf("expected error when the update affects no rows")
+	}
+	if !errors.Is(err, repository.ErrBaselineVersionNotFound) {
+		t.Fatalf("expected ErrBaselineVersionNotFound, got %v", err)
+	}
+}
+
+// approveZeroRowsRepo wraps the mem fake to simulate an ApproveVersion that matches no rows.
+type approveZeroRowsRepo struct {
+	*memBaselineRepoForService
+}
+
+func (r approveZeroRowsRepo) ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) (int64, error) {
+	return 0, nil
+}
+
+func TestListPendingBaselineVersions_Passthrough(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	versions, err := svc.ListPendingVersions(ctx)
+	if err != nil {
+		t.Fatalf("list pending versions should succeed: %v", err)
+	}
+	if versions != nil {
+		t.Fatalf("expected nil versions from empty fake, got %v", versions)
+	}
+}
 
 func TestParseMasterFileContent_Passwd(t *testing.T) {
 	content := "akmods:x:966:965:User is used by akmods to build akmod packages:/var/cache/akmods/:/sbin/nologin\nmpd:x:964:964:Music Player Daemon:/var/lib/mpd:/sbin/nologin"

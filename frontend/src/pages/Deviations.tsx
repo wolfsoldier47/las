@@ -13,6 +13,8 @@ interface Deviation {
   approved_at: string
   is_active: boolean
   expires_at?: string
+  created_by?: string
+  approval_status?: 'pending' | 'approved'
 }
 
 interface PaginatedDeviations {
@@ -29,7 +31,6 @@ const emptyForm = {
   file_type: 'passwd',
   entry_line: '',
   justification: '',
-  approved_by: '',
   expires_at: '',
 }
 
@@ -96,7 +97,6 @@ export default function Deviations() {
       file_type: form.file_type,
       entry_line: form.entry_line,
       justification: form.justification,
-      approved_by: form.approved_by,
       expires_at: form.expires_at || undefined,
     }
     api
@@ -125,6 +125,13 @@ export default function Deviations() {
       .catch((err) => setError(err.response?.data?.error || err.message))
   }
 
+  const approveDeviation = (d: Deviation) => {
+    api
+      .post(`/deviations/${d.id}/approve`)
+      .then(() => fetchData())
+      .catch((err) => setError(err.response?.data?.error || err.message))
+  }
+
   const openEdit = (d: Deviation) => {
     setEditing(d)
     setEditForm({
@@ -132,7 +139,6 @@ export default function Deviations() {
       file_type: d.file_type,
       entry_line: buildEntryLine(d),
       justification: d.justification,
-      approved_by: d.approved_by,
       expires_at: d.expires_at || '',
     })
   }
@@ -145,7 +151,7 @@ export default function Deviations() {
       file_type: editForm.file_type,
       entry_line: editForm.entry_line,
       justification: editForm.justification,
-      approved_by: editForm.approved_by,
+      approved_by: editing.approved_by,
       expires_at: editForm.expires_at || undefined,
       is_active: editing.is_active,
     }
@@ -172,6 +178,7 @@ export default function Deviations() {
 
   const totalPages = Math.max(1, Math.ceil(totalDeviations / pageSize))
   const admin = isAdmin()
+  const username = (localStorage.getItem('ulas_username') || '').toLowerCase()
 
   return (
     <div className="flex flex-col gap-6">
@@ -250,16 +257,6 @@ export default function Deviations() {
               required
             />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Approved By</label>
-            <input
-              type="text"
-              className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-              value={form.approved_by}
-              onChange={(e) => setForm({ ...form, approved_by: e.target.value })}
-              required
-            />
-          </div>
           <div className="col-span-3">
             <button
               type="submit"
@@ -327,20 +324,41 @@ export default function Deviations() {
                   <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{d.file_type}</td>
                   <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{buildEntryLine(d)}</td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{d.justification}</td>
-                  <td className="px-5 py-3 text-muted-foreground text-xs">{d.approved_by}</td>
+                  <td className="px-5 py-3 text-muted-foreground text-xs">
+                    {d.approval_status === 'pending' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-amber-500/10 text-amber-500 border-amber-500/15">
+                        Pending
+                      </span>
+                    ) : (
+                      d.approved_by
+                    )}
+                  </td>
                   {admin && (
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => toggleDeviation(d)}
-                        className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
-                          d.is_active
-                            ? 'bg-orange-500/10 text-orange-500 border border-orange-500/15 hover:bg-orange-500/20'
-                            : 'bg-green-500/10 text-green-500 border border-green-500/15 hover:bg-green-500/20'
-                        }`}
-                      >
-                        {d.is_active ? 'Disable' : 'Enable'}
-                      </button>
+                      {d.approval_status === 'pending' ? (
+                        d.created_by && d.created_by.toLowerCase() === username ? (
+                          <span className="text-xs text-muted-foreground">Awaiting another approver</span>
+                        ) : (
+                          <button
+                            onClick={() => approveDeviation(d)}
+                            className="px-3 py-1 rounded-lg text-xs font-semibold bg-green-500/10 text-green-500 border border-green-500/15 hover:bg-green-500/20 transition-all"
+                          >
+                            Approve
+                          </button>
+                        )
+                      ) : (
+                        <button
+                          onClick={() => toggleDeviation(d)}
+                          className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                            d.is_active
+                              ? 'bg-orange-500/10 text-orange-500 border border-orange-500/15 hover:bg-orange-500/20'
+                              : 'bg-green-500/10 text-green-500 border border-green-500/15 hover:bg-green-500/20'
+                          }`}
+                        >
+                          {d.is_active ? 'Disable' : 'Enable'}
+                        </button>
+                      )}
                       <button
                         onClick={() => openEdit(d)}
                         className="px-3 py-1 rounded-lg text-xs font-semibold bg-primary/10 text-primary border border-primary/15 hover:bg-primary/20 transition-all"
@@ -432,16 +450,6 @@ export default function Deviations() {
                   className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
                   value={editForm.justification}
                   onChange={(e) => setEditForm({ ...editForm, justification: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">Approved By</label>
-                <input
-                  type="text"
-                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
-                  value={editForm.approved_by}
-                  onChange={(e) => setEditForm({ ...editForm, approved_by: e.target.value })}
                   required
                 />
               </div>

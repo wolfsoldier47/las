@@ -27,6 +27,10 @@ type DeviationRepository interface {
 	CountDeviations(ctx context.Context, filters DeviationFilters) (active, inactive int, err error)
 	Update(ctx context.Context, deviation *models.AllowedDeviation) error
 	Delete(ctx context.Context, id uuid.UUID) error
+
+	// Approval workflow.
+	SetApproved(ctx context.Context, id uuid.UUID, approver string) error
+	ListPending(ctx context.Context) ([]models.AllowedDeviation, error)
 }
 
 // DeviationFilters contains optional filters for listing deviations.
@@ -52,9 +56,10 @@ func (r *PgDeviationRepository) Create(ctx context.Context, deviation *models.Al
 	query := `
 		INSERT INTO allowed_deviations (
 			id, hostname, file_type, entry_key, entry_value, justification,
-			approved_by, approved_at, expires_at, is_active, created_at, updated_at
+			approved_by, approved_at, expires_at, is_active,
+			created_by, approval_status, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		deviation.ID,
@@ -67,6 +72,8 @@ func (r *PgDeviationRepository) Create(ctx context.Context, deviation *models.Al
 		deviation.ApprovedAt,
 		deviation.ExpiresAt,
 		deviation.IsActive,
+		deviation.CreatedBy,
+		deviation.ApprovalStatus,
 		deviation.CreatedAt,
 		deviation.UpdatedAt,
 	)
@@ -76,11 +83,18 @@ func (r *PgDeviationRepository) Create(ctx context.Context, deviation *models.Al
 	return nil
 }
 
+// deviationColumns is the canonical column list for allowed_deviations SELECTs.
+// It must match the field order scanned in scanDeviations.
+const deviationColumns = `
+			id, hostname, file_type, entry_key, entry_value, justification,
+			approved_by, approved_at, expires_at, is_active,
+			created_by, approval_status, created_at, updated_at
+	`
+
 // GetByHostFileKey returns an active or inactive deviation by hostname, file type, and entry key.
 func (r *PgDeviationRepository) GetByHostFileKey(ctx context.Context, hostname string, fileType models.FileType, entryKey string) (*models.AllowedDeviation, error) {
 	query := `
-		SELECT id, hostname, file_type, entry_key, entry_value, justification,
-		       approved_by, approved_at, expires_at, is_active, created_at, updated_at
+		SELECT` + deviationColumns + `
 		FROM allowed_deviations
 		WHERE hostname = $1 AND file_type = $2 AND entry_key = $3
 	`
@@ -98,6 +112,8 @@ func (r *PgDeviationRepository) GetByHostFileKey(ctx context.Context, hostname s
 		&deviation.ApprovedAt,
 		&deviation.ExpiresAt,
 		&deviation.IsActive,
+		&deviation.CreatedBy,
+		&deviation.ApprovalStatus,
 		&deviation.CreatedAt,
 		&deviation.UpdatedAt,
 	); err != nil {
@@ -112,8 +128,7 @@ func (r *PgDeviationRepository) GetByHostFileKey(ctx context.Context, hostname s
 // GetByID returns an allowed deviation by its UUID.
 func (r *PgDeviationRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.AllowedDeviation, error) {
 	query := `
-		SELECT id, hostname, file_type, entry_key, entry_value, justification,
-		       approved_by, approved_at, expires_at, is_active, created_at, updated_at
+		SELECT` + deviationColumns + `
 		FROM allowed_deviations
 		WHERE id = $1
 	`
@@ -131,6 +146,8 @@ func (r *PgDeviationRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 		&deviation.ApprovedAt,
 		&deviation.ExpiresAt,
 		&deviation.IsActive,
+		&deviation.CreatedBy,
+		&deviation.ApprovalStatus,
 		&deviation.CreatedAt,
 		&deviation.UpdatedAt,
 	); err != nil {
@@ -146,8 +163,7 @@ func (r *PgDeviationRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 func (r *PgDeviationRepository) List(ctx context.Context, filters DeviationFilters) ([]models.AllowedDeviation, error) {
 	where, args := r.buildDeviationWhere(filters)
 	query := `
-		SELECT id, hostname, file_type, entry_key, entry_value, justification,
-		       approved_by, approved_at, expires_at, is_active, created_at, updated_at
+		SELECT` + deviationColumns + `
 		FROM allowed_deviations
 	` + where + `
 		ORDER BY created_at DESC
@@ -181,8 +197,7 @@ func (r *PgDeviationRepository) ListPaginated(ctx context.Context, filters Devia
 	}
 
 	query := `
-		SELECT id, hostname, file_type, entry_key, entry_value, justification,
-		       approved_by, approved_at, expires_at, is_active, created_at, updated_at
+		SELECT` + deviationColumns + `
 		FROM allowed_deviations
 	` + where + `
 		ORDER BY created_at DESC
@@ -245,7 +260,7 @@ func (r *PgDeviationRepository) CountDeviations(ctx context.Context, filters Dev
 }
 
 func (r *PgDeviationRepository) scanDeviations(rows *sql.Rows) ([]models.AllowedDeviation, error) {
-	var deviations []models.AllowedDeviation
+	deviations := make([]models.AllowedDeviation, 0)
 	for rows.Next() {
 		var deviation models.AllowedDeviation
 		if err := rows.Scan(
@@ -259,6 +274,8 @@ func (r *PgDeviationRepository) scanDeviations(rows *sql.Rows) ([]models.Allowed
 			&deviation.ApprovedAt,
 			&deviation.ExpiresAt,
 			&deviation.IsActive,
+			&deviation.CreatedBy,
+			&deviation.ApprovalStatus,
 			&deviation.CreatedAt,
 			&deviation.UpdatedAt,
 		); err != nil {
@@ -330,4 +347,46 @@ func (r *PgDeviationRepository) Delete(ctx context.Context, id uuid.UUID) error 
 		return ErrDeviationNotFound
 	}
 	return nil
+}
+
+// SetApproved activates a deviation, marks it approved, and records the approver.
+func (r *PgDeviationRepository) SetApproved(ctx context.Context, id uuid.UUID, approver string) error {
+	query := `
+		UPDATE allowed_deviations
+		SET is_active = true,
+		    approval_status = 'approved',
+		    approved_by = $2,
+		    approved_at = NOW(),
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	res, err := r.db.ExecContext(ctx, query, id, approver)
+	if err != nil {
+		return fmt.Errorf("approve deviation: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrDeviationNotFound
+	}
+	return nil
+}
+
+// ListPending returns deviations that are still awaiting approval, newest first.
+func (r *PgDeviationRepository) ListPending(ctx context.Context) ([]models.AllowedDeviation, error) {
+	query := `
+		SELECT` + deviationColumns + `
+		FROM allowed_deviations
+		WHERE approval_status = 'pending'
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("list pending deviations: %w", err)
+	}
+	defer rows.Close()
+
+	return r.scanDeviations(rows)
 }

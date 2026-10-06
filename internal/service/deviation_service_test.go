@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -22,7 +24,8 @@ func (r *memDeviationRepoForService) Create(ctx context.Context, deviation *mode
 func (r *memDeviationRepoForService) GetByID(ctx context.Context, id uuid.UUID) (*models.AllowedDeviation, error) {
 	for i := range r.deviations {
 		if r.deviations[i].ID == id {
-			return &r.deviations[i], nil
+			d := r.deviations[i]
+			return &d, nil
 		}
 	}
 	return nil, repository.ErrDeviationNotFound
@@ -67,6 +70,30 @@ func (r *memDeviationRepoForService) Update(ctx context.Context, deviation *mode
 
 func (r *memDeviationRepoForService) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
+}
+
+func (r *memDeviationRepoForService) SetApproved(ctx context.Context, id uuid.UUID, approver string) error {
+	for i := range r.deviations {
+		if r.deviations[i].ID == id {
+			r.deviations[i].IsActive = true
+			r.deviations[i].ApprovalStatus = "approved"
+			r.deviations[i].ApprovedBy = approver
+			r.deviations[i].ApprovedAt = time.Now().UTC()
+			r.deviations[i].UpdatedAt = time.Now().UTC()
+			return nil
+		}
+	}
+	return repository.ErrDeviationNotFound
+}
+
+func (r *memDeviationRepoForService) ListPending(ctx context.Context) ([]models.AllowedDeviation, error) {
+	var out []models.AllowedDeviation
+	for _, d := range r.deviations {
+		if d.ApprovalStatus == "pending" {
+			out = append(out, d)
+		}
+	}
+	return out, nil
 }
 
 func TestCreateDeviation_DuplicateHostFileKeyRejected(t *testing.T) {
@@ -205,5 +232,234 @@ func TestCreateDeviation_InvalidEntryLineRejected(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("expected error for invalid entry line")
+	}
+}
+
+func TestCreateDeviation_PendingAndInactive(t *testing.T) {
+	ctx := context.Background()
+	repo := &memDeviationRepoForService{}
+	svc := NewDefaultDeviationService(repo)
+
+	deviation, err := svc.Create(ctx, CreateDeviationRequest{
+		Hostname:      "host001.example.com",
+		FileType:      models.FileTypePasswd,
+		EntryLine:     "admin:x:0:0:admin:/home/admin:/bin/bash",
+		Justification: "service account",
+		CreatedBy:     "alice",
+	})
+	if err != nil {
+		t.Fatalf("create should succeed: %v", err)
+	}
+
+	if deviation.IsActive {
+		t.Fatalf("new deviation should be inactive until approved")
+	}
+	if deviation.ApprovalStatus != "pending" {
+		t.Fatalf("expected approval status pending, got %q", deviation.ApprovalStatus)
+	}
+	if deviation.ApprovedBy != "" {
+		t.Fatalf("expected empty approved_by before approval, got %q", deviation.ApprovedBy)
+	}
+	if !deviation.ApprovedAt.IsZero() {
+		t.Fatalf("expected zero approved_at before approval, got %v", deviation.ApprovedAt)
+	}
+	if deviation.CreatedBy != "alice" {
+		t.Fatalf("expected created_by alice, got %q", deviation.CreatedBy)
+	}
+
+	stored := repo.deviations[0]
+	if stored.IsActive || stored.ApprovalStatus != "pending" || stored.ApprovedBy != "" {
+		t.Fatalf("stored deviation should be pending and inactive, got %+v", stored)
+	}
+}
+
+func TestApproveDeviation_Success(t *testing.T) {
+	ctx := context.Background()
+	repo := &memDeviationRepoForService{}
+	svc := NewDefaultDeviationService(repo)
+
+	deviation, err := svc.Create(ctx, CreateDeviationRequest{
+		Hostname:      "host001.example.com",
+		FileType:      models.FileTypePasswd,
+		EntryLine:     "admin:x:0:0:admin:/home/admin:/bin/bash",
+		Justification: "service account",
+		CreatedBy:     "alice",
+	})
+	if err != nil {
+		t.Fatalf("create should succeed: %v", err)
+	}
+
+	if err := svc.Approve(ctx, deviation.ID, "bob"); err != nil {
+		t.Fatalf("approve by different user should succeed: %v", err)
+	}
+
+	stored := repo.deviations[0]
+	if !stored.IsActive {
+		t.Fatalf("deviation should be active after approval")
+	}
+	if stored.ApprovalStatus != "approved" {
+		t.Fatalf("expected approval status approved, got %q", stored.ApprovalStatus)
+	}
+	if stored.ApprovedBy != "bob" {
+		t.Fatalf("expected approved_by bob, got %q", stored.ApprovedBy)
+	}
+	if stored.ApprovedAt.IsZero() {
+		t.Fatalf("expected approved_at to be set after approval")
+	}
+}
+
+func TestApproveDeviation_SelfApprovalRejected(t *testing.T) {
+	ctx := context.Background()
+	repo := &memDeviationRepoForService{}
+	svc := NewDefaultDeviationService(repo)
+
+	deviation, err := svc.Create(ctx, CreateDeviationRequest{
+		Hostname:      "host001.example.com",
+		FileType:      models.FileTypePasswd,
+		EntryLine:     "admin:x:0:0:admin:/home/admin:/bin/bash",
+		Justification: "service account",
+		CreatedBy:     "alice",
+	})
+	if err != nil {
+		t.Fatalf("create should succeed: %v", err)
+	}
+
+	err = svc.Approve(ctx, deviation.ID, "alice")
+	if err == nil {
+		t.Fatalf("expected self-approval to be rejected")
+	}
+	if err != ErrSelfApproval {
+		t.Fatalf("expected ErrSelfApproval, got %v", err)
+	}
+
+	// case-insensitive match must also be rejected
+	err = svc.Approve(ctx, deviation.ID, "ALICE")
+	if err != ErrSelfApproval {
+		t.Fatalf("expected ErrSelfApproval for case-insensitive match, got %v", err)
+	}
+
+	stored := repo.deviations[0]
+	if stored.IsActive || stored.ApprovalStatus != "pending" || stored.ApprovedBy != "" {
+		t.Fatalf("rejected approval must not modify the deviation, got %+v", stored)
+	}
+}
+
+func TestApproveDeviation_NotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := &memDeviationRepoForService{}
+	svc := NewDefaultDeviationService(repo)
+
+	err := svc.Approve(ctx, uuid.New(), "bob")
+	if err == nil {
+		t.Fatalf("expected error for unknown deviation")
+	}
+	if !errors.Is(err, repository.ErrDeviationNotFound) {
+		t.Fatalf("expected ErrDeviationNotFound, got %v", err)
+	}
+}
+
+func TestApproveDeviation_AlreadyApprovedIsNoOp(t *testing.T) {
+	ctx := context.Background()
+	repo := &memDeviationRepoForService{}
+	svc := NewDefaultDeviationService(repo)
+
+	deviation, err := svc.Create(ctx, CreateDeviationRequest{
+		Hostname:      "host001.example.com",
+		FileType:      models.FileTypePasswd,
+		EntryLine:     "admin:x:0:0:admin:/home/admin:/bin/bash",
+		Justification: "service account",
+		CreatedBy:     "alice",
+	})
+	if err != nil {
+		t.Fatalf("create should succeed: %v", err)
+	}
+	if err := svc.Approve(ctx, deviation.ID, "bob"); err != nil {
+		t.Fatalf("approve should succeed: %v", err)
+	}
+
+	approvedAt := repo.deviations[0].ApprovedAt
+	if err := svc.Approve(ctx, deviation.ID, "carol"); err != nil {
+		t.Fatalf("re-approving an approved deviation should be a no-op: %v", err)
+	}
+	if repo.deviations[0].ApprovedBy != "bob" {
+		t.Fatalf("re-approval must not change the original approver, got %q", repo.deviations[0].ApprovedBy)
+	}
+	if !repo.deviations[0].ApprovedAt.Equal(approvedAt) {
+		t.Fatalf("re-approval must not change the original approval time")
+	}
+}
+
+func TestUpdateDeviation_PendingCannotBeActivated(t *testing.T) {
+	ctx := context.Background()
+	repo := &memDeviationRepoForService{}
+	svc := NewDefaultDeviationService(repo)
+
+	deviation, err := svc.Create(ctx, CreateDeviationRequest{
+		Hostname:      "host001.example.com",
+		FileType:      models.FileTypePasswd,
+		EntryLine:     "admin:x:0:0:admin:/home/admin:/bin/bash",
+		Justification: "service account",
+		CreatedBy:     "alice",
+	})
+	if err != nil {
+		t.Fatalf("create should succeed: %v", err)
+	}
+
+	_, err = svc.Update(ctx, deviation.ID, UpdateDeviationRequest{
+		Hostname:      deviation.Hostname,
+		FileType:      deviation.FileType,
+		EntryLine:     "admin:x:0:0:admin:/home/admin:/bin/bash",
+		Justification: "service account",
+		ApprovedBy:    "alice",
+		IsActive:      true,
+	})
+	if err == nil {
+		t.Fatalf("expected error when activating a pending deviation via update")
+	}
+	if err != ErrPendingApproval {
+		t.Fatalf("expected ErrPendingApproval, got %v", err)
+	}
+
+	stored := repo.deviations[0]
+	if stored.IsActive || stored.ApprovalStatus != "pending" {
+		t.Fatalf("pending deviation must remain inactive, got %+v", stored)
+	}
+}
+
+func TestListPendingDeviations_OnlyPending(t *testing.T) {
+	ctx := context.Background()
+	repo := &memDeviationRepoForService{}
+	svc := NewDefaultDeviationService(repo)
+
+	for i, key := range []string{"admin", "backup"} {
+		_, err := svc.Create(ctx, CreateDeviationRequest{
+			Hostname:      "host001.example.com",
+			FileType:      models.FileTypePasswd,
+			EntryLine:     key + ":x:0:0:" + key + ":/home/" + key + ":/bin/bash",
+			Justification: "account " + key,
+			CreatedBy:     "alice",
+		})
+		if err != nil {
+			t.Fatalf("create %d should succeed: %v", i, err)
+		}
+	}
+
+	pending, err := svc.ListPending(ctx)
+	if err != nil {
+		t.Fatalf("list pending should succeed: %v", err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("expected 2 pending deviations, got %d", len(pending))
+	}
+
+	if err := svc.Approve(ctx, repo.deviations[0].ID, "bob"); err != nil {
+		t.Fatalf("approve should succeed: %v", err)
+	}
+	pending, err = svc.ListPending(ctx)
+	if err != nil {
+		t.Fatalf("list pending should succeed: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected 1 pending deviation after approval, got %d", len(pending))
 	}
 }

@@ -21,7 +21,17 @@ type DeviationService interface {
 	ListPaginated(ctx context.Context, filters repository.DeviationFilters, page, limit int) (*PaginatedDeviations, error)
 	Update(ctx context.Context, id uuid.UUID, req UpdateDeviationRequest) (*models.AllowedDeviation, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	Approve(ctx context.Context, id uuid.UUID, approver string) error
+	ListPending(ctx context.Context) ([]models.AllowedDeviation, error)
 }
+
+// ErrSelfApproval is returned when a user tries to approve their own submission.
+// ErrPendingApproval is returned when a caller tries to activate a pending deviation
+// through the generic update path instead of the approve endpoint.
+var (
+	ErrSelfApproval    = errors.New("approver cannot approve their own submission")
+	ErrPendingApproval = errors.New("deviation is pending approval; use the approve endpoint to activate it")
+)
 
 // PaginatedDeviations is a page of allowed deviations.
 type PaginatedDeviations struct {
@@ -39,8 +49,9 @@ type CreateDeviationRequest struct {
 	FileType      models.FileType `json:"file_type" binding:"required"`
 	EntryLine     string          `json:"entry_line" binding:"required"`
 	Justification string          `json:"justification" binding:"required"`
-	ApprovedBy    string          `json:"approved_by" binding:"required"`
+	ApprovedBy    string          `json:"approved_by"` // ignored: the approver is set at approval time
 	ExpiresAt     *time.Time      `json:"expires_at"`
+	CreatedBy     string          `json:"created_by"` // set from the authenticated caller, not the body
 }
 
 // UpdateDeviationRequest is the input for updating an allowed deviation.
@@ -81,18 +92,19 @@ func (s *DefaultDeviationService) Create(ctx context.Context, req CreateDeviatio
 
 	now := time.Now().UTC()
 	deviation := &models.AllowedDeviation{
-		ID:            uuid.New(),
-		Hostname:      req.Hostname,
-		FileType:      req.FileType,
-		EntryKey:      entryKey,
-		EntryValue:    entryValue,
-		Justification: req.Justification,
-		ApprovedBy:    req.ApprovedBy,
-		ApprovedAt:    now,
-		ExpiresAt:     req.ExpiresAt,
-		IsActive:      true,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:             uuid.New(),
+		Hostname:       req.Hostname,
+		FileType:       req.FileType,
+		EntryKey:       entryKey,
+		EntryValue:     entryValue,
+		Justification:  req.Justification,
+		ApprovedBy:     "",
+		ExpiresAt:      req.ExpiresAt,
+		IsActive:       false,
+		CreatedBy:      req.CreatedBy,
+		ApprovalStatus: "pending",
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	if err := s.repo.Create(ctx, deviation); err != nil {
@@ -148,6 +160,12 @@ func (s *DefaultDeviationService) Update(ctx context.Context, id uuid.UUID, req 
 		return nil, fmt.Errorf("get deviation: %w", err)
 	}
 
+	// A pending deviation may only become active through the approve endpoint;
+	// allowing is_active=true here would bypass the 4-eyes rule.
+	if deviation.ApprovalStatus == "pending" && req.IsActive {
+		return nil, ErrPendingApproval
+	}
+
 	entryKey, entryValue, err := parseEntryLine(req.FileType, req.EntryLine)
 	if err != nil {
 		return nil, err
@@ -182,6 +200,38 @@ func (s *DefaultDeviationService) Delete(ctx context.Context, id uuid.UUID) erro
 		return fmt.Errorf("delete deviation: %w", err)
 	}
 	return nil
+}
+
+// Approve activates a pending deviation after the 4-eyes check: the approver
+// must differ from the creator (case-insensitive). Approving an already
+// approved deviation is a no-op.
+func (s *DefaultDeviationService) Approve(ctx context.Context, id uuid.UUID, approver string) error {
+	deviation, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get deviation: %w", err)
+	}
+
+	if strings.EqualFold(deviation.CreatedBy, approver) {
+		return ErrSelfApproval
+	}
+
+	if deviation.ApprovalStatus == "approved" {
+		return nil
+	}
+
+	if err := s.repo.SetApproved(ctx, id, approver); err != nil {
+		return fmt.Errorf("approve deviation: %w", err)
+	}
+	return nil
+}
+
+// ListPending returns deviations that are still awaiting approval.
+func (s *DefaultDeviationService) ListPending(ctx context.Context) ([]models.AllowedDeviation, error) {
+	deviations, err := s.repo.ListPending(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list pending deviations: %w", err)
+	}
+	return deviations, nil
 }
 
 // parseEntryLine splits a passwd/group style line into key and value.

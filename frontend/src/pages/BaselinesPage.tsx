@@ -11,6 +11,9 @@ interface BaselineVersion {
   description?: string
   created_by?: string
   created_at: string
+  approval_status?: 'pending' | 'approved'
+  approved_by?: string
+  approved_at?: string
 }
 
 interface PaginatedBaselineVersions {
@@ -344,7 +347,11 @@ export default function BaselinesPage() {
                   <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{v.version}</td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{v.entry_count}</td>
                   <td className="px-5 py-3 text-xs">
-                    {v.is_active ? (
+                    {v.approval_status === 'pending' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-amber-500/10 text-amber-500 border-amber-500/15">
+                        Pending Approval
+                      </span>
+                    ) : v.is_active ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-green-500/10 text-green-500 border-green-500/15">
                         Active
                       </span>
@@ -365,7 +372,7 @@ export default function BaselinesPage() {
                       >
                         View
                       </button>
-                      {admin && !v.is_active && (
+                      {admin && !v.is_active && v.approval_status !== 'pending' && (
                         <button
                           onClick={() => activateVersion(v)}
                           className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"
@@ -484,7 +491,7 @@ export default function BaselinesPage() {
               <div className="font-semibold text-sm text-foreground">Confirm Upload</div>
             </div>
             <div className="p-5 text-sm text-foreground">
-              Uploading will create a new version and activate it automatically. Master file versions cannot be edited after creation.
+              Uploading creates a new version. It stays inactive until another admin approves it. Master file versions cannot be edited after creation.
             </div>
             <div className="px-5 py-4 border-t border-border flex justify-end gap-2">
               <button

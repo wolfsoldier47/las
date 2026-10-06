@@ -11,18 +11,21 @@ import (
 // Baselines are global per OS type and major version.
 // Entries are grouped into versions; only one version per (os_type, file_type) can be active at a time.
 type MasterBaseline struct {
-	ID          uuid.UUID  `db:"id" json:"id"`
-	OSType      OSType     `db:"os_type" json:"os_type" validate:"required"`
-	FileType    FileType   `db:"file_type" json:"file_type" validate:"required"`
-	EntryKey    string     `db:"entry_key" json:"entry_key" validate:"required"`
-	EntryValue  string     `db:"entry_value" json:"entry_value" validate:"required"`
-	Version     int        `db:"version" json:"version"`
-	IsActive    bool       `db:"is_active" json:"is_active"`
-	CheckIDs    bool       `db:"check_ids" json:"check_ids"` // privilege list: compare uid/gid for this entry
-	Description string     `db:"description" json:"description,omitempty"`
-	CreatedBy   string     `db:"created_by" json:"created_by,omitempty"`
-	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
+	ID             uuid.UUID  `db:"id" json:"id"`
+	OSType         OSType     `db:"os_type" json:"os_type" validate:"required"`
+	FileType       FileType   `db:"file_type" json:"file_type" validate:"required"`
+	EntryKey       string     `db:"entry_key" json:"entry_key" validate:"required"`
+	EntryValue     string     `db:"entry_value" json:"entry_value" validate:"required"`
+	Version        int        `db:"version" json:"version"`
+	IsActive       bool       `db:"is_active" json:"is_active"`
+	CheckIDs       bool       `db:"check_ids" json:"check_ids"` // privilege list: compare uid/gid for this entry
+	Description    string     `db:"description" json:"description,omitempty"`
+	CreatedBy      string     `db:"created_by" json:"created_by,omitempty"`
+	ApprovalStatus string     `db:"approval_status" json:"approval_status"`
+	ApprovedBy     string     `db:"approved_by" json:"approved_by,omitempty"`
+	ApprovedAt     *time.Time `db:"approved_at" json:"approved_at,omitempty"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // BaselineVersionSnapshot captures an active master file version at a point in time.

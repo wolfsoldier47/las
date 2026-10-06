@@ -211,6 +211,43 @@ func (h *BaselineHandler) ActivateBaselineVersion(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// ApproveBaselineVersion handles POST /api/baselines/versions/approve.
+// The approver is the authenticated user; approving one's own upload is rejected.
+func (h *BaselineHandler) ApproveBaselineVersion(c *gin.Context) {
+	var req scopeActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	approver := c.GetString("username")
+	if err := h.service.ApproveVersion(c.Request.Context(), req.OSType, req.FileType, req.Version, approver); err != nil {
+		if errors.Is(err, service.ErrSelfApproval) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, repository.ErrBaselineVersionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "baseline version not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// ListPendingBaselineVersions handles GET /api/baselines/versions/pending.
+func (h *BaselineHandler) ListPendingBaselineVersions(c *gin.Context) {
+	versions, err := h.service.ListPendingVersions(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, versions)
+}
+
 // DeactivateBaselineScope handles POST /api/baselines/versions/deactivate.
 func (h *BaselineHandler) DeactivateBaselineScope(c *gin.Context) {
 	var req scopeActionRequest

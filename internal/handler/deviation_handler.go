@@ -30,6 +30,8 @@ func (h *DeviationHandler) CreateDeviation(c *gin.Context) {
 		return
 	}
 
+	req.CreatedBy = c.GetString("username")
+
 	deviation, err := h.service.Create(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, repository.ErrDuplicateDeviation) {
@@ -129,11 +131,52 @@ func (h *DeviationHandler) UpdateDeviation(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "a deviation already exists for this host, file, and key"})
 			return
 		}
+		if errors.Is(err, service.ErrPendingApproval) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, deviation)
+}
+
+// ApproveDeviation handles POST /api/deviations/:id/approve.
+// The approver is the authenticated user; approving one's own submission is rejected.
+func (h *DeviationHandler) ApproveDeviation(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deviation id"})
+		return
+	}
+
+	approver := c.GetString("username")
+	if err := h.service.Approve(c.Request.Context(), id, approver); err != nil {
+		if errors.Is(err, service.ErrSelfApproval) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, repository.ErrDeviationNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "deviation not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// ListPendingDeviations handles GET /api/deviations/pending.
+func (h *DeviationHandler) ListPendingDeviations(c *gin.Context) {
+	deviations, err := h.service.ListPending(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, deviations)
 }
 
 // DeleteDeviation handles DELETE /api/deviations/:id.

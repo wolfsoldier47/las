@@ -217,5 +217,40 @@ func runManualMigrations() error {
 		return fmt.Errorf("baseline check_ids migration failed: %w", err)
 	}
 
+	baselineApprovalMigration := `
+		ALTER TABLE master_baselines
+			ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved',
+			ADD COLUMN IF NOT EXISTS approved_by TEXT,
+			ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+
+		UPDATE master_baselines
+		SET approval_status = 'approved'
+		WHERE approval_status IS NULL;
+
+		UPDATE master_baselines
+		SET approved_by = COALESCE(NULLIF(created_by, ''), 'legacy')
+		WHERE approved_by IS NULL;
+	`
+	if err := db.Exec(baselineApprovalMigration).Error; err != nil {
+		return fmt.Errorf("baseline approval migration failed: %w", err)
+	}
+
+	deviationApprovalMigration := `
+		ALTER TABLE allowed_deviations
+			ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '',
+			ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
+
+		UPDATE allowed_deviations
+		SET approval_status = 'approved'
+		WHERE approval_status IS NULL;
+
+		UPDATE allowed_deviations
+		SET created_by = COALESCE(NULLIF(approved_by, ''), 'legacy')
+		WHERE created_by IS NULL OR created_by = '';
+	`
+	if err := db.Exec(deviationApprovalMigration).Error; err != nil {
+		return fmt.Errorf("deviation approval migration failed: %w", err)
+	}
+
 	return nil
 }

@@ -30,14 +30,14 @@ func (r *memScanRepo) GetScanJobByID(ctx context.Context, id uuid.UUID) (*models
 func (r *memScanRepo) GetScanJobByAnsibleJobID(ctx context.Context, ansibleJobID string) (*models.ScanJob, error) {
 	return nil, repository.ErrScanJobNotFound
 }
-func (r *memScanRepo) ListScanJobs(ctx context.Context) ([]models.ScanJob, error)   { return nil, nil }
+func (r *memScanRepo) ListScanJobs(ctx context.Context) ([]models.ScanJob, error) { return nil, nil }
 func (r *memScanRepo) ListScanJobsPaginated(ctx context.Context, page, limit int) ([]models.ScanJob, int, error) {
 	return nil, 0, nil
 }
 func (r *memScanRepo) ListScanJobsPaginatedWithDeviationCounts(ctx context.Context, page, limit int, onlyWithDeviations bool, search string, fromDate, toDate *time.Time) ([]models.ScanJobSummary, int, error) {
 	return nil, 0, nil
 }
-func (r *memScanRepo) HasActiveScanJob(ctx context.Context) (bool, error) { return false, nil }
+func (r *memScanRepo) HasActiveScanJob(ctx context.Context) (bool, error)           { return false, nil }
 func (r *memScanRepo) UpdateScanJob(ctx context.Context, job *models.ScanJob) error { return nil }
 func (r *memScanRepo) CreateScanResult(ctx context.Context, result *models.ScanResult) error {
 	r.results[result.ID] = result
@@ -143,7 +143,7 @@ func (r *memHostRepo) GetByID(ctx context.Context, id uuid.UUID) (*models.Host, 
 func (r *memHostRepo) GetByHostname(ctx context.Context, hostname string) (*models.Host, error) {
 	return nil, repository.ErrHostNotFound
 }
-func (r *memHostRepo) List(ctx context.Context) ([]models.Host, error)     { return nil, nil }
+func (r *memHostRepo) List(ctx context.Context) ([]models.Host, error) { return nil, nil }
 func (r *memHostRepo) ListByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Host, error) {
 	return nil, nil
 }
@@ -189,7 +189,7 @@ func (r *memBaselineRepo) Delete(ctx context.Context, id uuid.UUID) error { retu
 func (r *memBaselineRepo) CreateVersion(ctx context.Context, version *models.MasterBaselineVersion) error {
 	return nil
 }
-func (r *memBaselineRepo) CreateVersionedEntries(ctx context.Context, osType models.OSType, fileType models.FileType, version int, entries []repository.BaselineEntryInput, createdBy, description string) error {
+func (r *memBaselineRepo) CreateVersionedEntries(ctx context.Context, osType models.OSType, fileType models.FileType, version int, entries []repository.BaselineEntryInput, createdBy, description string, active bool) error {
 	return nil
 }
 func (r *memBaselineRepo) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
@@ -203,6 +203,15 @@ func (r *memBaselineRepo) ListVersions(ctx context.Context) ([]repository.Baseli
 }
 func (r *memBaselineRepo) ListVersionsPaginated(ctx context.Context, page, limit int) ([]repository.BaselineVersionSummary, int, error) {
 	return nil, 0, nil
+}
+func (r *memBaselineRepo) ListPendingVersions(ctx context.Context) ([]repository.BaselineVersionSummary, error) {
+	return nil, nil
+}
+func (r *memBaselineRepo) ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) (int64, error) {
+	return 0, nil
+}
+func (r *memBaselineRepo) GetVersionCreator(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (string, error) {
+	return "", repository.ErrBaselineVersionNotFound
 }
 
 type memDeviationRepo struct {
@@ -244,6 +253,12 @@ func (r *memDeviationRepo) Update(ctx context.Context, deviation *models.Allowed
 	return nil
 }
 func (r *memDeviationRepo) Delete(ctx context.Context, id uuid.UUID) error { return nil }
+func (r *memDeviationRepo) SetApproved(ctx context.Context, id uuid.UUID, approver string) error {
+	return nil
+}
+func (r *memDeviationRepo) ListPending(ctx context.Context) ([]models.AllowedDeviation, error) {
+	return nil, nil
+}
 
 type memIncidentRepo struct {
 	mu        sync.Mutex
@@ -322,7 +337,6 @@ func TestCompareScanResult_CreatesIncidentForDeviation(t *testing.T) {
 				EntryValue: "x:0:0:root:/root:/bin/bash",
 				Version:    7,
 				IsActive:   true,
-
 			},
 		},
 	}
@@ -404,7 +418,6 @@ func TestCompareScanResult_AllowedDeviationDoesNotCreateIncident(t *testing.T) {
 				EntryValue: "x:0:0:root:/root:/bin/bash",
 				Version:    7,
 				IsActive:   true,
-
 			},
 		},
 	}
@@ -490,7 +503,6 @@ func TestCompareScanResult_NoBaselineForMajorVersion(t *testing.T) {
 				EntryValue: "x:0:0:root:/root:/bin/bash",
 				Version:    7,
 				IsActive:   true,
-
 			},
 		},
 	}
@@ -772,11 +784,11 @@ func TestMaskIgnoredFields(t *testing.T) {
 		{models.FileTypePasswd, "x:1:1:root:/root:/bin/bash", false, "x::::/root:/bin/bash"},       // masked equal to above
 		{models.FileTypePasswd, "x:0:0:Root Admin:/root:/bin/bash", false, "x::::/root:/bin/bash"}, // gecos ignored
 		{models.FileTypePasswd, "x:0:0:toor:/root:/bin/zsh", false, "x::::/root:/bin/zsh"},         // home/shell survive masking
-		{models.FileTypePasswd, "x:0:0:malformed", false, "x:0:0:malformed"},                      // unexpected field count passthrough
+		{models.FileTypePasswd, "x:0:0:malformed", false, "x:0:0:malformed"},                       // unexpected field count passthrough
 		{models.FileTypePasswd, "x:0:0:root:/root:/bin/bash", true, "x:0:0::/root:/bin/bash"},      // privileged: uid/gid kept, gecos still ignored
 		{models.FileTypeGroup, "x:10:alice,bob", false, "x::alice,bob"},
-		{models.FileTypeGroup, "x:10", false, "x:"},          // members empty (already normalized before comparison)
-		{models.FileTypeGroup, "x", false, "x"},              // unparseable passthrough
+		{models.FileTypeGroup, "x:10", false, "x:"},                      // members empty (already normalized before comparison)
+		{models.FileTypeGroup, "x", false, "x"},                          // unparseable passthrough
 		{models.FileTypeGroup, "x:10:alice,bob", true, "x:10:alice,bob"}, // privileged: nothing masked
 	}
 	for _, tc := range tests {

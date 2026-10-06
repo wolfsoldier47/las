@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -27,6 +28,8 @@ type BaselineService interface {
 	ListVersionsPaginated(ctx context.Context, page, limit int) (*PaginatedBaselineVersions, error)
 	ActivateVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error
 	DeactivateScope(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error
+	ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) error
+	ListPendingVersions(ctx context.Context) ([]repository.BaselineVersionSummary, error)
 	OSVersions() map[string][]int
 }
 
@@ -85,18 +88,19 @@ func (s *DefaultBaselineService) Create(ctx context.Context, req CreateBaselineR
 
 	now := time.Now().UTC()
 	baseline := &models.MasterBaseline{
-		ID:          uuid.New(),
-		OSType:      req.OSType,
-		FileType:    req.FileType,
-		EntryKey:    req.EntryKey,
-		EntryValue:  req.EntryValue,
-		Version:     req.Version,
-		IsActive:    true,
-		CheckIDs:    req.CheckIDs,
-		Description: req.Description,
-		CreatedBy:   req.CreatedBy,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:             uuid.New(),
+		OSType:         req.OSType,
+		FileType:       req.FileType,
+		EntryKey:       req.EntryKey,
+		EntryValue:     req.EntryValue,
+		Version:        req.Version,
+		IsActive:       false,
+		CheckIDs:       req.CheckIDs,
+		Description:    req.Description,
+		CreatedBy:      req.CreatedBy,
+		ApprovalStatus: "pending",
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	if err := s.repo.Create(ctx, baseline); err != nil {
@@ -194,6 +198,7 @@ func (s *DefaultBaselineService) UploadMasterFile(ctx context.Context, req Uploa
 		entries,
 		req.CreatedBy,
 		req.Description,
+		false, // new uploaded versions start inactive and pending approval
 	); err != nil {
 		return 0, fmt.Errorf("create versioned entries: %w", err)
 	}
@@ -251,6 +256,44 @@ func (s *DefaultBaselineService) DeactivateScope(ctx context.Context, osType mod
 		return fmt.Errorf("deactivate scope: %w", err)
 	}
 	return nil
+}
+
+// ApproveVersion activates a pending versioned scope after the 4-eyes check:
+// the approver must differ from the creator (case-insensitive).
+func (s *DefaultBaselineService) ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) error {
+	if err := s.validateOSVersion(osType, version); err != nil {
+		return err
+	}
+
+	creator, err := s.repo.GetVersionCreator(ctx, osType, fileType, version)
+	if err != nil {
+		if errors.Is(err, repository.ErrBaselineVersionNotFound) {
+			return err
+		}
+		return fmt.Errorf("get version creator: %w", err)
+	}
+
+	if strings.EqualFold(creator, approver) {
+		return ErrSelfApproval
+	}
+
+	rows, err := s.repo.ApproveVersion(ctx, osType, fileType, version, approver)
+	if err != nil {
+		return fmt.Errorf("approve version: %w", err)
+	}
+	if rows == 0 {
+		return repository.ErrBaselineVersionNotFound
+	}
+	return nil
+}
+
+// ListPendingVersions returns the versioned scopes awaiting approval.
+func (s *DefaultBaselineService) ListPendingVersions(ctx context.Context) ([]repository.BaselineVersionSummary, error) {
+	versions, err := s.repo.ListPendingVersions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list pending versions: %w", err)
+	}
+	return versions, nil
 }
 
 // validateOSVersion ensures the requested major version is allowed for the OS type.
