@@ -40,9 +40,21 @@ export function clearStoredAuth(): void {
   localStorage.removeItem(PERMISSION_KEY)
 }
 
-export async function downloadScanReport(scanId: string): Promise<void> {
+// downloadScanReport fetches the PDF report as a blob and triggers a browser
+// download. onProgress receives the download percentage (0-100); it is called
+// with 0 when generation starts and 100 when the download is complete.
+export async function downloadScanReport(
+  scanId: string,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  onProgress?.(0)
   const response = await api.get(`/scans/${scanId}/report`, {
     responseType: 'blob',
+    onDownloadProgress: (event) => {
+      if (event.total) {
+        onProgress?.(Math.min(99, Math.round((event.loaded / event.total) * 100)))
+      }
+    },
   })
   const blob = new Blob([response.data], { type: 'application/pdf' })
   const url = window.URL.createObjectURL(blob)
@@ -53,6 +65,7 @@ export async function downloadScanReport(scanId: string): Promise<void> {
   link.click()
   document.body.removeChild(link)
   window.URL.revokeObjectURL(url)
+  onProgress?.(100)
 }
 
 export default api

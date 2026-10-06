@@ -67,6 +67,7 @@ export default function ScanHistoryPage() {
   const [totalScans, setTotalScans] = useState(0)
   const [onlyDeviations, setOnlyDeviations] = useState(false)
   const [search, setSearch] = useState('')
+  const [reportProgress, setReportProgress] = useState<{ id: string; percent: number } | null>(null)
 
   const fetchScans = (nextPage = page, nextSize = pageSize, nextOnlyDeviations = onlyDeviations, nextSearch = search) => {
     api
@@ -111,6 +112,12 @@ export default function ScanHistoryPage() {
   useEffect(() => {
     fetchScans(page, pageSize)
   }, [page, pageSize, onlyDeviations, search])
+
+  useEffect(() => {
+    if (reportProgress === null || reportProgress.percent < 100) return
+    const timer = setTimeout(() => setReportProgress(null), 2000)
+    return () => clearTimeout(timer)
+  }, [reportProgress])
 
   const aapLive = aapHealth?.aap_status === 'ok'
   const admin = isAdmin()
@@ -315,7 +322,6 @@ export default function ScanHistoryPage() {
                     <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">Failed</th>
                     <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">Deviations</th>
                     <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">Allowed</th>
-                    <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Failed Hosts</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Created</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Report</th>
                   </tr>
@@ -337,23 +343,36 @@ export default function ScanHistoryPage() {
                       <td className="px-5 py-3 text-right text-red-500 text-xs font-medium">{scan.failed_hosts}</td>
                       <td className="px-5 py-3 text-right text-red-500 text-xs font-medium">{scan.total_deviations || 0}</td>
                       <td className="px-5 py-3 text-right text-amber-500 text-xs font-medium">{scan.total_allowed_deviations || 0}</td>
-                      <td className="px-5 py-3 text-muted-foreground text-xs">
-                        {scan.failed_host_names && scan.failed_host_names.length > 0
-                          ? scan.failed_host_names.join(', ')
-                          : '-'}
-                      </td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">{new Date(scan.created_at).toLocaleString()}</td>
                       <td className="px-5 py-3">
-                        <button
-                          onClick={() =>
-                            downloadScanReport(scan.id).catch((err) =>
-                              setError(err.response?.data?.error || err.message)
-                            )
-                          }
-                          className="text-xs px-2 py-1 border border-border rounded-lg hover:bg-secondary transition-all"
-                        >
-                          PDF
-                        </button>
+                        {reportProgress?.id === scan.id ? (
+                          <div className="flex flex-col items-end gap-1 w-28">
+                            <div className="w-full h-1.5 rounded-full bg-secondary overflow-hidden border border-border">
+                              <div
+                                className="h-full bg-primary transition-all duration-300"
+                                style={{ width: `${reportProgress.percent}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">
+                              {reportProgress.percent >= 100 ? 'Done' : `PDF ${reportProgress.percent}%`}
+                            </span>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setReportProgress({ id: scan.id, percent: 0 })
+                              downloadScanReport(scan.id, (percent) =>
+                                setReportProgress({ id: scan.id, percent })
+                              ).catch((err) => {
+                                setError(err.response?.data?.error || err.message)
+                                setReportProgress(null)
+                              })
+                            }}
+                            className="text-xs px-2 py-1 border border-border rounded-lg hover:bg-secondary transition-all"
+                          >
+                            PDF
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

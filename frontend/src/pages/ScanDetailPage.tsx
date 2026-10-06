@@ -80,7 +80,6 @@ function StatusBadge({ status }: { status: string }) {
     success: 'bg-green-500/10 text-green-500 border-green-500/15',
     deviation_found: 'bg-red-500/10 text-red-500 border-red-500/15',
     allowed_deviation: 'bg-primary/10 text-primary border-primary/15',
-    failed_host: 'bg-red-500/10 text-red-500 border-red-500/15',
     no_baseline: 'bg-orange-500/10 text-orange-500 border-orange-500/15',
     pending: 'bg-primary/10 text-primary border-primary/15',
   }
@@ -102,6 +101,7 @@ export default function ScanDetailPage() {
   const [hostDetails, setHostDetails] = useState<Record<string, HostResult>>({})
   const [loadingHost, setLoadingHost] = useState<string | null>(null)
   const [hostError, setHostError] = useState<Record<string, string>>({})
+  const [reportProgress, setReportProgress] = useState<number | null>(null)
 
   const fetchDetail = (nextPage = page, nextSize = pageSize) => {
     if (!id) return
@@ -132,6 +132,12 @@ export default function ScanDetailPage() {
     fetchDetail(page, pageSize)
   }, [id, page, pageSize])
 
+  useEffect(() => {
+    if (reportProgress === null || reportProgress < 100) return
+    const timer = setTimeout(() => setReportProgress(null), 2000)
+    return () => clearTimeout(timer)
+  }, [reportProgress])
+
   const toggleHost = (hostResult: HostResult) => {
     const hostId = hostResult.host_id
     if (expandedHost === hostId) {
@@ -140,7 +146,7 @@ export default function ScanDetailPage() {
     }
     setExpandedHost(hostId)
 
-    if (hostDetails[hostId] || hostResult.status === 'failed_host') {
+    if (hostDetails[hostId]) {
       return
     }
 
@@ -168,38 +174,48 @@ export default function ScanDetailPage() {
   if (error) return <p className="text-red-500 text-sm">{error}</p>
   if (!detail) return <p className="text-muted-foreground text-sm">Loading...</p>
 
-  const failedRows: HostResult[] = (detail.job.failed_host_names || []).map((hostname) => ({
-    id: `failed-${hostname}`,
-    host_id: `failed-${hostname}`,
-    hostname,
-    status: 'failed_host',
-    deviations_found: 0,
-    allowed_deviations: [],
-    incidents: [],
-  }))
+  const failedHostNames: string[] = detail.job.failed_host_names || []
 
-  const displayHosts: HostResult[] = page === 1 ? [...failedRows, ...detail.results] : detail.results
-  const totalHosts = detail.total + failedRows.length
+  const totalHosts = detail.total
   const totalPages = Math.max(1, Math.ceil(totalHosts / pageSize))
   const safePage = Math.min(page, totalPages)
 
-  const activeHost = expandedHost ? hostDetails[expandedHost] || detail.results.find((r) => r.host_id === expandedHost) || failedRows.find((r) => r.host_id === expandedHost) : null
+  const activeHost = expandedHost ? hostDetails[expandedHost] || detail.results.find((r) => r.host_id === expandedHost) : null
 
   return (
     <div className="flex flex-col gap-6">
       <div className="bg-card border border-border rounded-xl p-5">
         <div className="flex justify-between items-start mb-4">
           <div className="font-semibold text-sm text-foreground">Scan Job Details</div>
-          <button
-            onClick={() => {
-              if (id) {
-                downloadScanReport(id).catch((err) => setError(err.response?.data?.error || err.message))
-              }
-            }}
-            className="text-xs px-3 py-1.5 border border-border rounded-lg hover:bg-secondary transition-all"
-          >
-            Download PDF Report
-          </button>
+          {reportProgress !== null ? (
+            <div className="flex flex-col items-end gap-1.5 w-56">
+              <div className="w-full h-2 rounded-full bg-secondary overflow-hidden border border-border">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: `${reportProgress}%` }}
+                />
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                {reportProgress >= 100 ? 'Download complete' : `Generating PDF... ${reportProgress}%`}
+              </span>
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                if (id) {
+                  downloadScanReport(id, setReportProgress).catch(
+                    (err) => {
+                      setError(err.response?.data?.error || err.message)
+                      setReportProgress(null)
+                    }
+                  )
+                }
+              }}
+              className="text-xs px-3 py-1.5 border border-border rounded-lg hover:bg-secondary transition-all"
+            >
+              Download PDF Report
+            </button>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div><span className="text-muted-foreground">Job ID:</span> <span className="font-mono text-xs">{detail.job.id}</span></div>
@@ -311,7 +327,7 @@ export default function ScanDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {displayHosts.map((result) => (
+              {detail.results.map((result) => (
                 <React.Fragment key={result.id}>
                   <tr
                     onClick={() => toggleHost(result)}
@@ -321,11 +337,9 @@ export default function ScanDetailPage() {
                   >
                     <td className="px-5 py-3 text-foreground font-medium font-mono text-xs">
                       {result.hostname}
-                      {result.status !== 'failed_host' && (
-                        <span className="ml-2 text-[10px] text-muted-foreground">
-                          {expandedHost === result.host_id ? '▲' : '▼'}
-                        </span>
-                      )}
+                      <span className="ml-2 text-[10px] text-muted-foreground">
+                        {expandedHost === result.host_id ? '▲' : '▼'}
+                      </span>
                     </td>
                     <td className="px-5 py-3"><StatusBadge status={result.status} /></td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{result.os_type || '-'}</td>
@@ -333,10 +347,10 @@ export default function ScanDetailPage() {
                     <td className="px-5 py-3 text-muted-foreground text-xs">{result.environment || '-'}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{result.datacenter || '-'}</td>
                     <td className="px-5 py-3 text-right text-muted-foreground text-xs">
-                      {result.status === 'failed_host' || result.no_baseline ? '-' : result.deviations_found}
+                      {result.no_baseline ? '-' : result.deviations_found}
                     </td>
                     <td className="px-5 py-3 text-right text-muted-foreground text-xs">
-                      {result.status === 'failed_host' || result.no_baseline ? '-' : result.allowed_deviations.length}
+                      {result.no_baseline ? '-' : result.allowed_deviations.length}
                     </td>
                   </tr>
                   {expandedHost === result.host_id && (
@@ -439,6 +453,39 @@ export default function ScanDetailPage() {
             Next
           </button>
         </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <div className="font-semibold text-sm text-foreground">Failed Hosts</div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            {failedHostNames.length > 0
+              ? `${failedHostNames.length} host(s) failed or were unreachable during the scan`
+              : 'No hosts failed during this scan'}
+          </div>
+        </div>
+        {failedHostNames.length > 0 && (
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-card">
+                <tr className="border-b border-border">
+                  <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground w-16">#</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Hostname</th>
+                  <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {failedHostNames.map((hostname, idx) => (
+                  <tr key={hostname} className="border-b border-border/50">
+                    <td className="px-5 py-2.5 text-muted-foreground text-xs">{idx + 1}</td>
+                    <td className="px-5 py-2.5 text-foreground font-mono text-xs">{hostname}</td>
+                    <td className="px-5 py-2.5"><StatusBadge status="failed" /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -65,7 +65,7 @@ export default function Inventory() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-20 h-20" style={{ background: 'radial-gradient(circle at top right, rgba(250,204,21,0.06), transparent 70%)' }} />
           <div className="text-xs text-muted-foreground font-medium">Total Hosts</div>
@@ -83,12 +83,6 @@ export default function Inventory() {
           <div className="text-xs text-muted-foreground font-medium">With Deviations</div>
           <div className="text-[28px] font-bold text-red-500 tracking-tight">{withDeviation}</div>
           <div className="text-xs text-muted-foreground">From latest scan</div>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-5 flex flex-col gap-2 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-20 h-20" style={{ background: 'radial-gradient(circle at top right, rgba(250,204,21,0.06), transparent 70%)' }} />
-          <div className="text-xs text-muted-foreground font-medium">Avg Compliance</div>
-          <div className="text-[28px] font-bold text-primary tracking-tight">{total ? '100%' : 'N/A'}</div>
-          <div className="text-xs text-muted-foreground">Fleet-wide average</div>
         </div>
       </div>
 
@@ -146,6 +140,7 @@ export default function Inventory() {
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">Host</th>
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">OS Type</th>
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">OS Name</th>
+                  <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">OS Version</th>
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">Environment</th>
                   <th className="px-5 py-2.5 text-left text-xs font-medium text-muted-foreground">Datacenter</th>
                   <th className="px-5 py-2.5 text-right text-xs font-medium text-muted-foreground"></th>
@@ -157,6 +152,7 @@ export default function Inventory() {
                     <td className="px-5 py-3 text-foreground font-medium font-mono text-xs">{host.hostname}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{host.os_type}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{host.os_name || '-'}</td>
+                    <td className="px-5 py-3 text-muted-foreground text-xs">{host.os_version || '-'}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{host.environment || '-'}</td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{host.datacenter || '-'}</td>
                     <td className="px-5 py-3 text-right">
