@@ -4,6 +4,9 @@ metadata:
   annotations:
     route.openshift.io/insecureEdgeTerminationPolicy: Redirect
     route.openshift.io/termination: Edge
+    # Report downloads (PDF) can take a while to generate for large scans;
+    # HAProxy's default route timeout of 30s is not enough.
+    haproxy.router.openshift.io/timeout: 300s
   name: {{ include "ulas-service.name" . }}-backend-ingress
 spec:
   tls:
