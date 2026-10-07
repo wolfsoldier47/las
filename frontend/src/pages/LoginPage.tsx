@@ -1,12 +1,34 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 export default function LoginPage() {
-  const { login, error: authError } = useAuth()
+  const { login, loginWithEntraCode, error: authError } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Entra ID round trip: the backend redirects back to /login?code=<one-time>
+  // on success or /login?error=<message> on failure.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    const entraError = params.get('error')
+    if (entraError) {
+      setError(entraError)
+      window.history.replaceState(null, '', window.location.pathname)
+      return
+    }
+    if (code) {
+      setLoading(true)
+      window.history.replaceState(null, '', window.location.pathname)
+      loginWithEntraCode(code).catch((err: any) => {
+        setError(err.message || 'Entra sign-in failed')
+        setLoading(false)
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -94,6 +116,28 @@ export default function LoginPage() {
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
+
+        <div className="flex items-center gap-3 my-5">
+          <div className="flex-1 h-px bg-border" />
+          <span className="text-xs text-muted-foreground">or</span>
+          <div className="flex-1 h-px bg-border" />
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            window.location.href = '/api/auth/entra/login'
+          }}
+          className="w-full py-2.5 rounded-xl border border-border bg-background text-foreground text-sm font-medium flex items-center justify-center gap-2 hover:bg-secondary transition-colors"
+        >
+          <svg width="16" height="16" viewBox="0 0 21 21" fill="none">
+            <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+            <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+            <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+            <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+          </svg>
+          Sign in with Entra ID
+        </button>
       </div>
     </div>
   )

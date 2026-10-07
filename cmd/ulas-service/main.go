@@ -152,11 +152,13 @@ func main() {
 	}
 
 	authHandler := handler.NewAuthHandler(tokenMaker, ldapClient, cfg, repository.NewPgAccessRepository(db))
+	entraHandler := handler.NewEntraHandler(tokenMaker, cfg, repository.NewPgAccessRepository(db), ldapClient, service.NewEntraService(cfg))
 
 	healthHandler := handler.NewHealthHandler(db, aapClient, aapSolarisClient)
 	r := router.New(
 		authHandler,
 		tokenMaker,
+		entraHandler,
 		healthHandler,
 		hostHandler,
 		baselineHandler,

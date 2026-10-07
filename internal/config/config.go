@@ -62,6 +62,12 @@ type AppConfig struct {
 	JWTSecretKey           string
 	JWTAccessTokenDuration int
 
+	// Entra ID (OIDC) authentication — optional; when empty, Entra login is disabled.
+	EntraTenantID     string
+	EntraClientID     string
+	EntraClientSecret string
+	EntraRedirectURL  string
+
 	// LDAP authentication
 	LDAPServer       string
 	LDAPPort         int
@@ -149,6 +155,12 @@ func Load() {
 			JWTSecretKey:           getEnv("JWT_SECRET_KEY", "dddddddddddddddddddddddddddddddddddddddafadsvsdavasdvsdabasdbewa"),
 			JWTAccessTokenDuration: getEnvAsInt("JWT_ACCESS_TOKEN_DURATION", 480), // minutes
 
+			// Entra ID (OIDC) login — leave empty to disable the "Login via Entra ID" button.
+			EntraTenantID:     getEnv("ENTRA_TENANT_ID", ""),
+			EntraClientID:     getEnv("ENTRA_CLIENT_ID", ""),
+			EntraClientSecret: getEnv("ENTRA_CLIENT_SECRET", ""),
+			EntraRedirectURL:  getEnv("ENTRA_REDIRECT_URL", GetURL()),
+
 			// LDAPServer:       getEnv("LDAP_SERVER", ""),
 			// LDAPPort:         getEnvAsInt("LDAP_PORT", 636),
 			// LDAPBaseDN:       getEnv("LDAP_BASE_DN", ""),
@@ -179,6 +191,13 @@ func Load() {
 
 		log.Println("Configuration loaded successfully")
 	})
+}
+
+func GetURL() string {
+
+	baseURL := getEnv("BACKEND_BASE_URL", "")
+	apiURL := fmt.Sprintf("%s/api/auth/entra/callback", baseURL)
+	return apiURL
 }
 
 // Get returns the loaded AppConfig instance. Call Load() first.

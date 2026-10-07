@@ -33,6 +33,7 @@ func corsMiddleware() gin.HandlerFunc {
 func New(
 	auth *handler.AuthHandler,
 	tokenMaker token.Maker,
+	entra *handler.EntraHandler,
 	health *handler.HealthHandler,
 	hosts *handler.HostHandler,
 	baselines *handler.BaselineHandler,
@@ -48,6 +49,9 @@ func New(
 
 	// Public API routes (no authentication required).
 	r.POST("/api/login", auth.Login)
+	r.GET("/api/auth/entra/login", entra.EntraLoginRedirect)
+	r.GET("/api/auth/entra/callback", entra.EntraCallback)
+	r.POST("/api/auth/entra/exchange", entra.EntraExchange)
 	r.GET("/api/health", health.HandleHealth)
 	r.GET("/api/health/aap", health.HandleAAPHealth)
 

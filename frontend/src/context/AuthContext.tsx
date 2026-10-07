@@ -21,6 +21,7 @@ interface AuthContextValue {
   loading: boolean
   error: string | null
   login: (username: string, password: string) => Promise<void>
+  loginWithEntraCode: (code: string) => Promise<void>
   logout: () => void
 }
 
@@ -97,6 +98,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const loginWithEntraCode = async (code: string) => {
+    setError(null)
+    try {
+      const res = await api.post('/auth/entra/exchange', { code })
+      const accessToken: string = res.data.access_token
+      const returnedUsername: string = res.data.username || ''
+      const userInfo: AuthUserInfo = res.data.user_info || {}
+      if (!accessToken) {
+        throw new Error('No access token received')
+      }
+      localStorage.setItem(TOKEN_KEY, accessToken)
+      localStorage.setItem(USERNAME_KEY, returnedUsername)
+      localStorage.setItem(USER_INFO_KEY, JSON.stringify(userInfo))
+      const permission = res.data.permission || getPermission()
+      if (permission) {
+        localStorage.setItem(PERMISSION_STORAGE_KEY, permission)
+      }
+      setUser({ token: accessToken, username: returnedUsername, info: userInfo })
+    } catch (err: any) {
+      const message = err.response?.data?.error || err.message || 'Entra sign-in failed'
+      setError(message)
+      throw new Error(message)
+    }
+  }
+
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USERNAME_KEY)
@@ -107,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, error, login, loginWithEntraCode, logout }}>
       {children}
     </AuthContext.Provider>
   )
