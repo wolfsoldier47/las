@@ -13,13 +13,8 @@ import (
 	"ulas-service/internal/config"
 )
 
-// ErrEntraNotConfigured is returned when Entra ID login is attempted without
-// the required tenant/client/secret configuration.
 var ErrEntraNotConfigured = errors.New("entra id login is not configured")
 
-// EntraIdentity is the normalized identity extracted from an Entra ID token.
-// Username is the canonical login name (lowercased UPN prefix without the
-// domain) so it matches user_access rows created from LDAP sAMAccountNames.
 type EntraIdentity struct {
 	Username string
 	Name     string
@@ -38,9 +33,6 @@ type EntraService interface {
 	Exchange(ctx context.Context, code string) (*EntraIdentity, error)
 }
 
-// DefaultEntraService implements EntraService against Microsoft Entra ID.
-// The OIDC provider is initialized lazily so the service can be constructed
-// (and the app can boot) without network access to login.microsoftonline.com.
 type DefaultEntraService struct {
 	cfg *config.AppConfig
 
@@ -49,8 +41,6 @@ type DefaultEntraService struct {
 	oauth2   *oauth2.Config
 }
 
-// NewEntraService creates a DefaultEntraService. It returns nil when Entra ID
-// is not configured, so callers can feature-detect with a nil check.
 func NewEntraService(cfg *config.AppConfig) *DefaultEntraService {
 	if cfg == nil || cfg.EntraTenantID == "" || cfg.EntraClientID == "" || cfg.EntraClientSecret == "" || cfg.EntraRedirectURL == "" {
 		return nil

@@ -30,6 +30,7 @@ type DeviationRepository interface {
 
 	// Approval workflow.
 	SetApproved(ctx context.Context, id uuid.UUID, approver string) error
+	SetRejected(ctx context.Context, id uuid.UUID) error
 	ListPending(ctx context.Context) ([]models.AllowedDeviation, error)
 }
 
@@ -363,6 +364,33 @@ func (r *PgDeviationRepository) SetApproved(ctx context.Context, id uuid.UUID, a
 	res, err := r.db.ExecContext(ctx, query, id, approver)
 	if err != nil {
 		return fmt.Errorf("approve deviation: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrDeviationNotFound
+	}
+	return nil
+}
+
+// SetRejected marks a pending deviation as rejected and ensures it stays
+// inactive. The approval_status guard prevents rejecting an approved
+// (possibly active) deviation, which would disable approved content without
+// going through approval.
+func (r *PgDeviationRepository) SetRejected(ctx context.Context, id uuid.UUID) error {
+	query := `
+		UPDATE allowed_deviations
+		SET approval_status = 'rejected',
+		    is_active = false,
+		    updated_at = NOW()
+		WHERE id = $1
+		  AND approval_status = 'pending'
+	`
+	res, err := r.db.ExecContext(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("reject deviation: %w", err)
 	}
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {

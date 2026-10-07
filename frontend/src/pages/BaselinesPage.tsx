@@ -11,7 +11,7 @@ interface BaselineVersion {
   description?: string
   created_by?: string
   created_at: string
-  approval_status?: 'pending' | 'approved'
+  approval_status?: 'pending' | 'approved' | 'rejected'
   approved_by?: string
   approved_at?: string
 }
@@ -352,6 +352,10 @@ export default function BaselinesPage() {
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-amber-500/10 text-amber-500 border-amber-500/15">
                         Pending Approval
                       </span>
+                    ) : v.approval_status === 'rejected' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-red-500/10 text-red-500 border-red-500/15">
+                        Rejected
+                      </span>
                     ) : v.is_active ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-green-500/10 text-green-500 border-green-500/15">
                         Active
@@ -374,7 +378,7 @@ export default function BaselinesPage() {
                       >
                         View
                       </button>
-                      {admin && !v.is_active && v.approval_status !== 'pending' && (
+                      {admin && !v.is_active && v.approval_status === 'approved' && (
                         <button
                           onClick={() => activateVersion(v)}
                           className="px-2 py-1 bg-primary text-primary-foreground rounded text-xs font-semibold hover:shadow-lg hover:shadow-primary/20 transition-all"

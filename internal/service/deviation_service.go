@@ -22,6 +22,7 @@ type DeviationService interface {
 	Update(ctx context.Context, id uuid.UUID, req UpdateDeviationRequest) (*models.AllowedDeviation, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	Approve(ctx context.Context, id uuid.UUID, approver string) error
+	Reject(ctx context.Context, id uuid.UUID) error
 	ListPending(ctx context.Context) ([]models.AllowedDeviation, error)
 }
 
@@ -31,6 +32,9 @@ type DeviationService interface {
 var (
 	ErrSelfApproval    = errors.New("approver cannot approve their own submission")
 	ErrPendingApproval = errors.New("deviation is pending approval; use the approve endpoint to activate it")
+	// ErrVersionNotApproved is returned when activation is attempted on an
+	// unknown or not-yet-approved baseline version.
+	ErrVersionNotApproved = errors.New("baseline version is unknown or not approved")
 )
 
 // PaginatedDeviations is a page of allowed deviations.
@@ -160,9 +164,10 @@ func (s *DefaultDeviationService) Update(ctx context.Context, id uuid.UUID, req 
 		return nil, fmt.Errorf("get deviation: %w", err)
 	}
 
-	// A pending deviation may only become active through the approve endpoint;
-	// allowing is_active=true here would bypass the 4-eyes rule.
-	if deviation.ApprovalStatus == "pending" && req.IsActive {
+	// A deviation may only become active through the approve endpoint;
+	// allowing is_active=true here would bypass the 4-eyes rule. This applies
+	// to anything not yet approved (pending or rejected).
+	if req.IsActive && deviation.ApprovalStatus != "approved" {
 		return nil, ErrPendingApproval
 	}
 
@@ -221,6 +226,25 @@ func (s *DefaultDeviationService) Approve(ctx context.Context, id uuid.UUID, app
 
 	if err := s.repo.SetApproved(ctx, id, approver); err != nil {
 		return fmt.Errorf("approve deviation: %w", err)
+	}
+	return nil
+}
+
+// Reject turns down a pending deviation. Unlike approval, rejection does not
+// require a different user — rejecting (or withdrawing) a request can never
+// activate anything, so the creator may reject their own. Only pending
+// deviations can be rejected; a rejected deviation can later be approved
+// anyway (the decision is not final).
+func (s *DefaultDeviationService) Reject(ctx context.Context, id uuid.UUID) error {
+	deviation, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("get deviation: %w", err)
+	}
+	if deviation.ApprovalStatus == "rejected" {
+		return nil
+	}
+	if err := s.repo.SetRejected(ctx, id); err != nil {
+		return fmt.Errorf("reject deviation: %w", err)
 	}
 	return nil
 }

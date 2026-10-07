@@ -15,7 +15,9 @@ import (
 // memBaselineRepoForService is an in-memory BaselineRepository for service-level tests.
 type memBaselineRepoForService struct {
 	creators     map[string]string
+	statuses     map[string]string // baselineScopeKey → approval status; "" means pending
 	approveCalls []baselineApproveCall
+	rejectCalls  []string
 }
 
 type baselineApproveCall struct {
@@ -48,8 +50,11 @@ func (r *memBaselineRepoForService) CreateVersion(ctx context.Context, version *
 func (r *memBaselineRepoForService) CreateVersionedEntries(ctx context.Context, osType models.OSType, fileType models.FileType, version int, entries []repository.BaselineEntryInput, createdBy, description string, active bool) error {
 	return nil
 }
-func (r *memBaselineRepoForService) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
-	return nil
+func (r *memBaselineRepoForService) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error) {
+	if r.statuses[baselineScopeKey(osType, fileType, version)] == "approved" {
+		return 1, nil
+	}
+	return 0, nil
 }
 func (r *memBaselineRepoForService) DeactivateScope(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
 	return nil
@@ -65,7 +70,22 @@ func (r *memBaselineRepoForService) ListPendingVersions(ctx context.Context) ([]
 }
 func (r *memBaselineRepoForService) ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) (int64, error) {
 	r.approveCalls = append(r.approveCalls, baselineApproveCall{osType: osType, fileType: fileType, version: version, approver: approver})
+	if r.statuses == nil {
+		r.statuses = map[string]string{}
+	}
+	r.statuses[baselineScopeKey(osType, fileType, version)] = "approved"
 	return 1, nil
+}
+func (r *memBaselineRepoForService) RejectVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error) {
+	r.rejectCalls = append(r.rejectCalls, baselineScopeKey(osType, fileType, version))
+	if r.statuses[baselineScopeKey(osType, fileType, version)] == "" {
+		if r.statuses == nil {
+			r.statuses = map[string]string{}
+		}
+		r.statuses[baselineScopeKey(osType, fileType, version)] = "rejected"
+		return 1, nil
+	}
+	return 0, nil
 }
 func (r *memBaselineRepoForService) GetVersionCreator(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (string, error) {
 	creator, ok := r.creators[baselineScopeKey(osType, fileType, version)]
@@ -305,5 +325,74 @@ func TestParseMasterFileContent_PrivilegeList(t *testing.T) {
 	}
 	if entries[1].CheckIDs {
 		t.Errorf("expected admin to have CheckIDs unset")
+	}
+}
+
+func TestRejectBaselineVersion_PendingScope(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{
+		creators: map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypeGroup, 7): "alice"},
+	}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	if err := svc.RejectVersion(ctx, models.OSTypeLinux, models.FileTypeGroup, 7); err != nil {
+		t.Fatalf("reject pending scope should succeed: %v", err)
+	}
+	if len(repo.rejectCalls) != 1 {
+		t.Fatalf("expected 1 reject call, got %d", len(repo.rejectCalls))
+	}
+}
+
+func TestRejectBaselineVersion_CreatorMayRejectOwn(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{
+		creators: map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypeGroup, 7): "alice"},
+	}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	// Rejection is a withdrawal, not an activation — the creator may do it.
+	if err := svc.RejectVersion(ctx, models.OSTypeLinux, models.FileTypeGroup, 7); err != nil {
+		t.Fatalf("creator should be able to reject their own pending scope: %v", err)
+	}
+}
+
+func TestRejectBaselineVersion_AlreadyApprovedRejected(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{
+		creators: map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypeGroup, 7): "alice"},
+		statuses: map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypeGroup, 7): "approved"},
+	}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	if err := svc.RejectVersion(ctx, models.OSTypeLinux, models.FileTypeGroup, 7); err != ErrVersionNotApproved {
+		t.Fatalf("expected ErrVersionNotApproved rejecting an approved scope, got %v", err)
+	}
+}
+
+func TestRejectBaselineVersion_UnknownScope(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{creators: map[string]string{}}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	err := svc.RejectVersion(ctx, models.OSTypeLinux, models.FileTypeGroup, 99)
+	if !errors.Is(err, repository.ErrBaselineVersionNotFound) {
+		t.Fatalf("expected ErrBaselineVersionNotFound, got %v", err)
+	}
+}
+
+func TestActivateBaselineVersion_RequiresApproval(t *testing.T) {
+	ctx := context.Background()
+	repo := &memBaselineRepoForService{creators: map[string]string{}}
+	svc := NewDefaultBaselineService(repo, nil)
+
+	// Pending scope: activation must fail so the 4-eyes rule cannot be bypassed.
+	if err := svc.ActivateVersion(ctx, models.OSTypeLinux, models.FileTypePasswd, 7); err != ErrVersionNotApproved {
+		t.Fatalf("expected ErrVersionNotApproved activating a pending scope, got %v", err)
+	}
+
+	// Approved scope: activation succeeds.
+	repo.statuses = map[string]string{baselineScopeKey(models.OSTypeLinux, models.FileTypePasswd, 7): "approved"}
+	if err := svc.ActivateVersion(ctx, models.OSTypeLinux, models.FileTypePasswd, 7); err != nil {
+		t.Fatalf("activating an approved scope should succeed: %v", err)
 	}
 }

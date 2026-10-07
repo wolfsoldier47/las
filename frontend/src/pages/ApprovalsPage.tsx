@@ -77,6 +77,26 @@ export default function ApprovalsPage() {
       .catch((err) => setError(err.response?.data?.error || err.message))
   }
 
+  const rejectVersion = (v: PendingBaselineVersion) => {
+    setError('')
+    api
+      .post('/baselines/versions/reject', {
+        os_type: v.os_type,
+        file_type: v.file_type,
+        version: v.version,
+      })
+      .then(() => fetchPendingVersions())
+      .catch((err) => setError(err.response?.data?.error || err.message))
+  }
+
+  const rejectDeviation = (d: PendingDeviation) => {
+    setError('')
+    api
+      .post(`/deviations/${d.id}/reject`)
+      .then(() => fetchPendingDeviations())
+      .catch((err) => setError(err.response?.data?.error || err.message))
+  }
+
   const isSelf = (createdBy?: string) => !!createdBy && createdBy.toLowerCase() === username
 
   return (
@@ -123,17 +143,26 @@ export default function ApprovalsPage() {
                       {v.created_at ? new Date(v.created_at).toLocaleString() : '—'}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      {admin &&
-                        (isSelf(v.created_by) ? (
-                          <span className="text-xs text-muted-foreground">Awaiting another approver</span>
-                        ) : (
+                      {admin && (
+                        <div className="flex gap-2 justify-end">
+                          {isSelf(v.created_by) ? (
+                            <span className="text-xs text-muted-foreground">Awaiting another approver</span>
+                          ) : (
+                            <button
+                              onClick={() => approveVersion(v)}
+                              className="px-2 py-1 border border-border rounded-lg text-xs hover:bg-secondary transition-all"
+                            >
+                              Approve
+                            </button>
+                          )}
                           <button
-                            onClick={() => approveVersion(v)}
-                            className="px-2 py-1 border border-border rounded-lg text-xs hover:bg-secondary transition-all"
+                            onClick={() => rejectVersion(v)}
+                            className="px-2 py-1 border border-red-500/30 text-red-500 rounded-lg text-xs hover:bg-red-500/10 transition-all"
                           >
-                            Approve
+                            Reject
                           </button>
-                        ))}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -180,17 +209,26 @@ export default function ApprovalsPage() {
                       {d.created_at ? new Date(d.created_at).toLocaleString() : '—'}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      {admin &&
-                        (isSelf(d.created_by) ? (
-                          <span className="text-xs text-muted-foreground">Awaiting another approver</span>
-                        ) : (
+                      {admin && (
+                        <div className="flex gap-2 justify-end">
+                          {isSelf(d.created_by) ? (
+                            <span className="text-xs text-muted-foreground">Awaiting another approver</span>
+                          ) : (
+                            <button
+                              onClick={() => approveDeviation(d)}
+                              className="px-2 py-1 border border-border rounded-lg text-xs hover:bg-secondary transition-all"
+                            >
+                              Approve
+                            </button>
+                          )}
                           <button
-                            onClick={() => approveDeviation(d)}
-                            className="px-2 py-1 border border-border rounded-lg text-xs hover:bg-secondary transition-all"
+                            onClick={() => rejectDeviation(d)}
+                            className="px-2 py-1 border border-red-500/30 text-red-500 rounded-lg text-xs hover:bg-red-500/10 transition-all"
                           >
-                            Approve
+                            Reject
                           </button>
-                        ))}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))

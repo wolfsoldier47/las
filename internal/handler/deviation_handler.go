@@ -168,6 +168,28 @@ func (h *DeviationHandler) ApproveDeviation(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// RejectDeviation handles POST /api/deviations/:id/reject.
+// Rejection (unlike approval) may be done by anyone, including the creator:
+// it can never activate anything.
+func (h *DeviationHandler) RejectDeviation(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid deviation id"})
+		return
+	}
+
+	if err := h.service.Reject(c.Request.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrDeviationNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "deviation not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 // ListPendingDeviations handles GET /api/deviations/pending.
 func (h *DeviationHandler) ListPendingDeviations(c *gin.Context) {
 	deviations, err := h.service.ListPending(c.Request.Context())

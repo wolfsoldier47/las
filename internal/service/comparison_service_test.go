@@ -192,8 +192,8 @@ func (r *memBaselineRepo) CreateVersion(ctx context.Context, version *models.Mas
 func (r *memBaselineRepo) CreateVersionedEntries(ctx context.Context, osType models.OSType, fileType models.FileType, version int, entries []repository.BaselineEntryInput, createdBy, description string, active bool) error {
 	return nil
 }
-func (r *memBaselineRepo) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
-	return nil
+func (r *memBaselineRepo) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error) {
+	return 1, nil
 }
 func (r *memBaselineRepo) DeactivateScope(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
 	return nil
@@ -208,6 +208,9 @@ func (r *memBaselineRepo) ListPendingVersions(ctx context.Context) ([]repository
 	return nil, nil
 }
 func (r *memBaselineRepo) ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) (int64, error) {
+	return 0, nil
+}
+func (r *memBaselineRepo) RejectVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error) {
 	return 0, nil
 }
 func (r *memBaselineRepo) GetVersionCreator(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (string, error) {
@@ -254,6 +257,9 @@ func (r *memDeviationRepo) Update(ctx context.Context, deviation *models.Allowed
 }
 func (r *memDeviationRepo) Delete(ctx context.Context, id uuid.UUID) error { return nil }
 func (r *memDeviationRepo) SetApproved(ctx context.Context, id uuid.UUID, approver string) error {
+	return nil
+}
+func (r *memDeviationRepo) SetRejected(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 func (r *memDeviationRepo) ListPending(ctx context.Context) ([]models.AllowedDeviation, error) {

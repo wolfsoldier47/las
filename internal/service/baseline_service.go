@@ -29,6 +29,7 @@ type BaselineService interface {
 	ActivateVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error
 	DeactivateScope(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error
 	ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) error
+	RejectVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error
 	ListPendingVersions(ctx context.Context) ([]repository.BaselineVersionSummary, error)
 	OSVersions() map[string][]int
 }
@@ -237,12 +238,18 @@ func (s *DefaultBaselineService) ListVersionsPaginated(ctx context.Context, page
 }
 
 // ActivateVersion makes a specific version the active one for its scope.
+// The repository only activates approved versions, so this path cannot be
+// used to bypass the 4-eyes approval rule.
 func (s *DefaultBaselineService) ActivateVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
 	if err := s.validateOSVersion(osType, version); err != nil {
 		return err
 	}
-	if err := s.repo.SetActiveVersion(ctx, osType, fileType, version); err != nil {
+	rows, err := s.repo.SetActiveVersion(ctx, osType, fileType, version)
+	if err != nil {
 		return fmt.Errorf("activate version: %w", err)
+	}
+	if rows == 0 {
+		return ErrVersionNotApproved
 	}
 	return nil
 }
@@ -283,6 +290,29 @@ func (s *DefaultBaselineService) ApproveVersion(ctx context.Context, osType mode
 	}
 	if rows == 0 {
 		return repository.ErrBaselineVersionNotFound
+	}
+	return nil
+}
+
+// RejectVersion turns down a pending versioned scope. Unlike approval,
+// rejection does not require a different user — rejecting (or withdrawing) a
+// request can never activate anything, so the creator may reject their own.
+// Only pending versions can be rejected; an approved version must be
+// deactivated instead. The version can later be approved anyway (the decision
+// is not final), or re-uploaded to reset it to pending.
+func (s *DefaultBaselineService) RejectVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
+	if err := s.validateOSVersion(osType, version); err != nil {
+		return err
+	}
+	if _, err := s.repo.GetVersionCreator(ctx, osType, fileType, version); err != nil {
+		return err
+	}
+	rows, err := s.repo.RejectVersion(ctx, osType, fileType, version)
+	if err != nil {
+		return fmt.Errorf("reject version: %w", err)
+	}
+	if rows == 0 {
+		return ErrVersionNotApproved
 	}
 	return nil
 }

@@ -63,7 +63,7 @@ type BaselineRepository interface {
 
 	// Versioned bulk operations.
 	CreateVersionedEntries(ctx context.Context, osType models.OSType, fileType models.FileType, version int, entries []BaselineEntryInput, createdBy, description string, active bool) error
-	SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error
+	SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error)
 	DeactivateScope(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error
 	ListVersions(ctx context.Context) ([]BaselineVersionSummary, error)
 	ListVersionsPaginated(ctx context.Context, page, limit int) ([]BaselineVersionSummary, int, error)
@@ -71,6 +71,7 @@ type BaselineRepository interface {
 
 	// Approval workflow.
 	ApproveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int, approver string) (int64, error)
+	RejectVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error)
 	GetVersionCreator(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (string, error)
 }
 
@@ -374,20 +375,28 @@ func (r *PgBaselineRepository) CreateVersionedEntries(
 	return nil
 }
 
-// SetActiveVersion marks the specified version as active.
-func (r *PgBaselineRepository) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) error {
+// SetActiveVersion marks the specified version as active. Only approved
+// versions can be activated — the approval_status guard enforces the 4-eyes
+// rule (activation without approval would bypass it). It returns the number
+// of rows updated (0 when the scope is unknown or not approved).
+func (r *PgBaselineRepository) SetActiveVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error) {
 	query := `
 		UPDATE master_baselines
 		SET is_active = true
 		WHERE os_type = $1
 		  AND file_type = $2
 		  AND version = $3
+		  AND approval_status = 'approved'
 	`
-	_, err := r.db.ExecContext(ctx, query, osType, fileType, version)
+	res, err := r.db.ExecContext(ctx, query, osType, fileType, version)
 	if err != nil {
-		return fmt.Errorf("activate version: %w", err)
+		return 0, fmt.Errorf("activate version: %w", err)
 	}
-	return nil
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("activate version rows affected: %w", err)
+	}
+	return rows, nil
 }
 
 // DeactivateScope sets is_active = false for the requested scope and OS major version.
@@ -417,7 +426,7 @@ func (r *PgBaselineRepository) ListVersions(ctx context.Context) ([]BaselineVers
 			COUNT(*) AS entry_count,
 			MAX(b.description) AS description,
 			MAX(b.created_by) AS created_by,
-			MAX(b.approved_by) AS approved_by,
+			COALESCE(MAX(b.approved_by), '') AS approved_by,
 			MAX(b.approval_status) AS approval_status,
 			MIN(b.created_at) AS created_at
 		FROM master_baselines b
@@ -464,7 +473,7 @@ func (r *PgBaselineRepository) ListVersionsPaginated(ctx context.Context, page, 
 			COUNT(*) AS entry_count,
 			MAX(b.description) AS description,
 			MAX(b.created_by) AS created_by,
-			MAX(b.approved_by) AS approved_by,
+			COALESCE(MAX(b.approved_by), '') AS approved_by,
 			MAX(b.approval_status) AS approval_status,
 			MIN(b.created_at) AS created_at
 		FROM master_baselines b
@@ -576,6 +585,32 @@ func (r *PgBaselineRepository) ApproveVersion(ctx context.Context, osType models
 	res, err := r.db.ExecContext(ctx, query, osType, fileType, version, approver)
 	if err != nil {
 		return 0, fmt.Errorf("approve version: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("rows affected: %w", err)
+	}
+	return rowsAffected, nil
+}
+
+// RejectVersion marks a pending versioned scope as rejected and ensures it
+// stays inactive. Only pending versions can be rejected — rejecting an
+// approved (possibly active) version would let a single user disable approved
+// content without approval. It returns the number of rows updated.
+func (r *PgBaselineRepository) RejectVersion(ctx context.Context, osType models.OSType, fileType models.FileType, version int) (int64, error) {
+	query := `
+		UPDATE master_baselines
+		SET approval_status = 'rejected',
+		    is_active = false,
+		    updated_at = NOW()
+		WHERE os_type = $1
+		  AND file_type = $2
+		  AND version = $3
+		  AND approval_status = 'pending'
+	`
+	res, err := r.db.ExecContext(ctx, query, osType, fileType, version)
+	if err != nil {
+		return 0, fmt.Errorf("reject version: %w", err)
 	}
 	rowsAffected, err := res.RowsAffected()
 	if err != nil {

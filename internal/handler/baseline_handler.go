@@ -204,6 +204,10 @@ func (h *BaselineHandler) ActivateBaselineVersion(c *gin.Context) {
 	}
 
 	if err := h.service.ActivateVersion(c.Request.Context(), req.OSType, req.FileType, req.Version); err != nil {
+		if errors.Is(err, service.ErrVersionNotApproved) {
+			c.JSON(http.StatusConflict, gin.H{"error": "baseline version is unknown or not approved"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -224,6 +228,32 @@ func (h *BaselineHandler) ApproveBaselineVersion(c *gin.Context) {
 	if err := h.service.ApproveVersion(c.Request.Context(), req.OSType, req.FileType, req.Version, approver); err != nil {
 		if errors.Is(err, service.ErrSelfApproval) {
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, repository.ErrBaselineVersionNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "baseline version not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// RejectBaselineVersion handles POST /api/baselines/versions/reject.
+// Rejection (unlike approval) may be done by anyone, including the creator:
+// it can never activate anything.
+func (h *BaselineHandler) RejectBaselineVersion(c *gin.Context) {
+	var req scopeActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.service.RejectVersion(c.Request.Context(), req.OSType, req.FileType, req.Version); err != nil {
+		if errors.Is(err, service.ErrVersionNotApproved) {
+			c.JSON(http.StatusConflict, gin.H{"error": "only pending baseline versions can be rejected"})
 			return
 		}
 		if errors.Is(err, repository.ErrBaselineVersionNotFound) {

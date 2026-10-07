@@ -14,7 +14,7 @@ interface Deviation {
   is_active: boolean
   expires_at?: string
   created_by?: string
-  approval_status?: 'pending' | 'approved'
+  approval_status?: 'pending' | 'approved' | 'rejected'
 }
 
 interface PaginatedDeviations {
@@ -329,6 +329,10 @@ export default function Deviations() {
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-amber-500/10 text-amber-500 border-amber-500/15">
                         Pending
                       </span>
+                    ) : d.approval_status === 'rejected' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border bg-red-500/10 text-red-500 border-red-500/15">
+                        Rejected
+                      </span>
                     ) : (
                       d.approved_by
                     )}
@@ -336,7 +340,7 @@ export default function Deviations() {
                   {admin && (
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
-                      {d.approval_status === 'pending' ? (
+                      {d.approval_status === 'pending' || d.approval_status === 'rejected' ? (
                         d.created_by && d.created_by.toLowerCase() === username ? (
                           <span className="text-xs text-muted-foreground">Awaiting another approver</span>
                         ) : (

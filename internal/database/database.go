@@ -229,7 +229,7 @@ func runManualMigrations() error {
 
 		UPDATE master_baselines
 		SET approved_by = COALESCE(NULLIF(created_by, ''), 'legacy')
-		WHERE approved_by IS NULL;
+		WHERE approved_by IS NULL AND approval_status = 'approved';
 	`
 	if err := db.Exec(baselineApprovalMigration).Error; err != nil {
 		return fmt.Errorf("baseline approval migration failed: %w", err)

@@ -108,12 +108,14 @@ func New(
 		admin.POST("/baselines/versions/activate", baselines.ActivateBaselineVersion)
 		admin.POST("/baselines/versions/deactivate", baselines.DeactivateBaselineScope)
 		admin.POST("/baselines/versions/approve", baselines.ApproveBaselineVersion)
+		admin.POST("/baselines/versions/reject", baselines.RejectBaselineVersion)
 		admin.GET("/baselines/versions/pending", baselines.ListPendingBaselineVersions)
 
 		admin.POST("/deviations", deviations.CreateDeviation)
 		admin.PUT("/deviations/:id", deviations.UpdateDeviation)
 		admin.DELETE("/deviations/:id", deviations.DeleteDeviation)
 		admin.POST("/deviations/:id/approve", deviations.ApproveDeviation)
+		admin.POST("/deviations/:id/reject", deviations.RejectDeviation)
 		admin.GET("/deviations/pending", deviations.ListPendingDeviations)
 
 		admin.POST("/scans", scans.InitiateScan)
