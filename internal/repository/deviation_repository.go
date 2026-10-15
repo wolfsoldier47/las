@@ -85,10 +85,11 @@ func (r *PgDeviationRepository) Create(ctx context.Context, deviation *models.Al
 }
 
 // deviationColumns is the canonical column list for allowed_deviations SELECTs.
-// It must match the field order scanned in scanDeviations.
+// It must match the field order scanned in scanDeviations. approved_by is
+// COALESCEd because pending (not yet approved) deviations have no approver.
 const deviationColumns = `
 			id, hostname, file_type, entry_key, entry_value, justification,
-			approved_by, approved_at, expires_at, is_active,
+			COALESCE(approved_by, '') AS approved_by, approved_at, expires_at, is_active,
 			created_by, approval_status, created_at, updated_at
 	`
 

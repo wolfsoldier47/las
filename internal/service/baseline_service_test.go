@@ -225,7 +225,7 @@ func TestListPendingBaselineVersions_Passthrough(t *testing.T) {
 
 func TestParseMasterFileContent_Passwd(t *testing.T) {
 	content := "akmods:x:966:965:User is used by akmods to build akmod packages:/var/cache/akmods/:/sbin/nologin\nmpd:x:964:964:Music Player Daemon:/var/lib/mpd:/sbin/nologin"
-	entries, err := parseMasterFileContent(models.FileTypePasswd, content, nil)
+	entries, err := parseMasterFileContent(models.FileTypePasswd, content, nil, nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestParseMasterFileContent_Passwd(t *testing.T) {
 
 func TestParseMasterFileContent_Group(t *testing.T) {
 	content := "akmods:x:965:\nmpd:x:964:sam3,sam1,sam2\nwheel:x:10:alice,bob"
-	entries, err := parseMasterFileContent(models.FileTypeGroup, content, nil)
+	entries, err := parseMasterFileContent(models.FileTypeGroup, content, nil, nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -294,15 +294,15 @@ func TestParseSnapshotContent_GroupMembersNormalized(t *testing.T) {
 
 var _ = repository.BaselineEntryInput{}
 
-func TestParsePrivilegeList(t *testing.T) {
-	set := parsePrivilegeList("root\n\nwheel, sudo\n# comment\n  daemon  \n")
+func TestParseKeyList(t *testing.T) {
+	set := parseKeyList("root\n\nwheel, sudo\n# comment\n  daemon  \n")
 	for _, key := range []string{"root", "wheel", "sudo", "daemon"} {
 		if !set[key] {
-			t.Errorf("expected %q in privilege set", key)
+			t.Errorf("expected %q in key set", key)
 		}
 	}
 	if set["comment"] || set[""] {
-		t.Errorf("unexpected keys in privilege set: %v", set)
+		t.Errorf("unexpected keys in key set: %v", set)
 	}
 	if len(set) != 4 {
 		t.Errorf("expected 4 keys, got %d: %v", len(set), set)
@@ -313,7 +313,7 @@ func TestParseMasterFileContent_PrivilegeList(t *testing.T) {
 	content := "root:x:0:0:root:/root:/bin/bash\nadmin:x:1000:1000:admin:/home/admin:/bin/bash"
 	privileged := map[string]bool{"root": true}
 
-	entries, err := parseMasterFileContent(models.FileTypePasswd, content, privileged)
+	entries, err := parseMasterFileContent(models.FileTypePasswd, content, privileged, nil, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -325,6 +325,38 @@ func TestParseMasterFileContent_PrivilegeList(t *testing.T) {
 	}
 	if entries[1].CheckIDs {
 		t.Errorf("expected admin to have CheckIDs unset")
+	}
+}
+
+func TestParseMasterFileContent_MandatoryList(t *testing.T) {
+	content := "root:x:0:0:root:/root:/bin/bash\nadmin:x:1000:1000:admin:/home/admin:/bin/bash\noptional:x:1001:1001::/home/opt:/bin/bash"
+
+	// Blank mandatory list: every entry is mandatory (legacy behavior).
+	all, err := parseMasterFileContent(models.FileTypePasswd, content, nil, nil, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, e := range all {
+		if !e.Mandatory {
+			t.Errorf("expected %q to be mandatory with blank mandatory list", e.EntryKey)
+		}
+	}
+
+	// Explicit list: only listed keys are mandatory.
+	mand := map[string]bool{"root": true, "admin": true}
+	some, err := parseMasterFileContent(models.FileTypePasswd, content, nil, mand, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	byKey := make(map[string]bool)
+	for _, e := range some {
+		byKey[e.EntryKey] = e.Mandatory
+	}
+	if !byKey["root"] || !byKey["admin"] {
+		t.Errorf("expected root and admin to be mandatory, got %v", byKey)
+	}
+	if byKey["optional"] {
+		t.Errorf("expected optional to be non-mandatory, got %v", byKey)
 	}
 }
 

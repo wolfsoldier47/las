@@ -32,8 +32,12 @@ interface HostResult {
 
 interface ScanJob {
   id: string
+  ansible_job_id?: string
   status: string
   os_type?: string
+  created_at: string
+  callbacks_received: number
+  successful_hosts: number
 }
 
 interface SelectedHost {
@@ -76,18 +80,27 @@ function ActiveJobBanner({ job }: { job?: ScanJob | null }) {
 export default function Dashboard() {
   const [selected, setSelected] = useState<SelectedHost | null>(null)
   const [job, setJob] = useState<ScanJob | null>(null)
+  const [scans, setScans] = useState<ScanJob[]>([])
+  const [selectedScanId, setSelectedScanId] = useState<string | null>(null)
   const [hostDetail, setHostDetail] = useState<HostResult | null>(null)
   const [error, setError] = useState('')
 
-  // Only fetch the job list for the running-job banner; host data is loaded
-  // by DataTable (counts only) and per-host details on selection.
+  // Fetch the newest 20 scans for the history dropdown. Host data for the
+  // selected scan is loaded by DataTable.
   useEffect(() => {
     api
-      .get('/scans')
+      .get('/scans?page=1&limit=20')
       .then((res) => {
-        const scans: ScanJob[] = res.data || []
-        const running = scans.find((s) => s.status === 'running' || s.status === 'initiating')
-        setJob(running || scans[0] || null)
+        const data = res.data
+        const list: ScanJob[] = Array.isArray(data) ? data : (data?.items ?? [])
+        setScans(list)
+        const running = list.find((s) => s.status === 'running' || s.status === 'initiating')
+        setJob(running || null)
+        // Default the dashboard to the running scan when available, otherwise
+        // the newest one. A manual selection is kept as long as it is in the list.
+        setSelectedScanId((prev) =>
+          prev && list.some((s) => s.id === prev) ? prev : (running?.id ?? list[0]?.id ?? null)
+        )
       })
       .catch((err) => setError(err.message))
   }, [])
@@ -119,7 +132,17 @@ export default function Dashboard() {
       <ActiveJobBanner job={job} />
       {error && <div className="text-xs text-red-500">{error}</div>}
       <div className="scan-results-export">
-        <DataTable selectedHost={selected?.hostname} onSelectHost={setSelected} />
+        <DataTable
+          selectedHost={selected?.hostname}
+          onSelectHost={setSelected}
+          scanId={selectedScanId}
+          scans={scans}
+          onScanChange={(id) => {
+            setSelectedScanId(id)
+            setSelected(null)
+            setHostDetail(null)
+          }}
+        />
       </div>
       {hostDetail && <ScanDetail host={hostDetail} />}
       <div className="text-center text-xs text-muted-foreground py-2">Ulas Compliance Engine v0.1.0</div>

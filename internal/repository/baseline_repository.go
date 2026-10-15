@@ -23,6 +23,7 @@ type BaselineEntryInput struct {
 	EntryKey   string
 	EntryValue string
 	CheckIDs   bool // privilege list: compare uid/gid for this entry
+	Mandatory  bool // must exist on the host; optional entries may be absent but must match when present
 }
 
 // BaselineVersionSummary represents a versioned master file scope.
@@ -98,10 +99,10 @@ func (r *PgBaselineRepository) Create(ctx context.Context, baseline *models.Mast
 	query := `
 		INSERT INTO master_baselines (
 			id, os_type, file_type, entry_key, entry_value,
-			version, is_active, check_ids, description, created_by,
+			version, is_active, check_ids, mandatory, description, created_by,
 			approval_status, approved_by, approved_at, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 	_, err := r.db.ExecContext(ctx, query,
 		baseline.ID,
@@ -112,6 +113,7 @@ func (r *PgBaselineRepository) Create(ctx context.Context, baseline *models.Mast
 		baseline.Version,
 		baseline.IsActive,
 		baseline.CheckIDs,
+		baseline.Mandatory,
 		baseline.Description,
 		baseline.CreatedBy,
 		baseline.ApprovalStatus,
@@ -130,8 +132,8 @@ func (r *PgBaselineRepository) Create(ctx context.Context, baseline *models.Mast
 func (r *PgBaselineRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.MasterBaseline, error) {
 	query := `
 		SELECT id, os_type, file_type, entry_key, entry_value,
-		       version, is_active, check_ids, description, created_by,
-		       approval_status, approved_by, approved_at, created_at, updated_at
+		       version, is_active, check_ids, mandatory, description, created_by,
+		       approval_status, COALESCE(approved_by, '') AS approved_by, approved_at, created_at, updated_at
 		FROM master_baselines
 		WHERE id = $1
 	`
@@ -147,6 +149,7 @@ func (r *PgBaselineRepository) GetByID(ctx context.Context, id uuid.UUID) (*mode
 		&baseline.Version,
 		&baseline.IsActive,
 		&baseline.CheckIDs,
+		&baseline.Mandatory,
 		&baseline.Description,
 		&baseline.CreatedBy,
 		&baseline.ApprovalStatus,
@@ -167,8 +170,8 @@ func (r *PgBaselineRepository) GetByID(ctx context.Context, id uuid.UUID) (*mode
 func (r *PgBaselineRepository) List(ctx context.Context, filters BaselineFilters) ([]models.MasterBaseline, error) {
 	query := `
 		SELECT id, os_type, file_type, entry_key, entry_value,
-		       version, is_active, check_ids, description, created_by,
-		       approval_status, approved_by, approved_at, created_at, updated_at
+		       version, is_active, check_ids, mandatory, description, created_by,
+		       approval_status, COALESCE(approved_by, '') AS approved_by, approved_at, created_at, updated_at
 		FROM master_baselines
 		WHERE 1=1
 	`
@@ -216,6 +219,7 @@ func (r *PgBaselineRepository) List(ctx context.Context, filters BaselineFilters
 			&baseline.Version,
 			&baseline.IsActive,
 			&baseline.CheckIDs,
+			&baseline.Mandatory,
 			&baseline.Description,
 			&baseline.CreatedBy,
 			&baseline.ApprovalStatus,
@@ -246,12 +250,13 @@ func (r *PgBaselineRepository) Update(ctx context.Context, baseline *models.Mast
 		    version = $6,
 		    is_active = $7,
 		    check_ids = $8,
-		    description = $9,
-		    created_by = $10,
-		    approval_status = $11,
-		    approved_by = $12,
-		    approved_at = $13,
-		    updated_at = $14
+		    mandatory = $9,
+		    description = $10,
+		    created_by = $11,
+		    approval_status = $12,
+		    approved_by = $13,
+		    approved_at = $14,
+		    updated_at = $15
 		WHERE id = $1
 	`
 	res, err := r.db.ExecContext(ctx, query,
@@ -263,6 +268,7 @@ func (r *PgBaselineRepository) Update(ctx context.Context, baseline *models.Mast
 		baseline.Version,
 		baseline.IsActive,
 		baseline.CheckIDs,
+		baseline.Mandatory,
 		baseline.Description,
 		baseline.CreatedBy,
 		baseline.ApprovalStatus,
@@ -352,16 +358,16 @@ func (r *PgBaselineRepository) CreateVersionedEntries(
 	insertQuery := `
 		INSERT INTO master_baselines (
 			id, os_type, file_type, entry_key, entry_value,
-			version, is_active, check_ids, description, created_by,
+			version, is_active, check_ids, mandatory, description, created_by,
 			approval_status, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 	for _, entry := range entries {
 		_, err := tx.ExecContext(ctx, insertQuery,
 			uuid.New(), osType, fileType,
 			entry.EntryKey, entry.EntryValue,
-			version, active, entry.CheckIDs, description, createdBy,
+			version, active, entry.CheckIDs, entry.Mandatory, description, createdBy,
 			approvalStatus, now, now,
 		)
 		if err != nil {

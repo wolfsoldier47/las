@@ -42,6 +42,7 @@ type CreateBaselineRequest struct {
 	EntryValue  string          `json:"entry_value" binding:"required"`
 	Version     int             `json:"version" binding:"required"`
 	CheckIDs    bool            `json:"check_ids"`
+	Mandatory   bool            `json:"mandatory"`
 	Description string          `json:"description"`
 	CreatedBy   string          `json:"created_by"`
 }
@@ -54,6 +55,7 @@ type UpdateBaselineRequest struct {
 	EntryValue   string          `json:"entry_value" binding:"required"`
 	Version      int             `json:"version" binding:"required"`
 	CheckIDs     bool            `json:"check_ids"`
+	Mandatory    bool            `json:"mandatory"`
 	Description  string          `json:"description"`
 	ChangeReason string          `json:"change_reason"`
 	ChangedBy    string          `json:"changed_by"`
@@ -66,6 +68,7 @@ type UploadMasterFileRequest struct {
 	Version       int             `json:"version" binding:"required"`
 	Content       string          `json:"content" binding:"required"`
 	PrivilegeList string          `json:"privilege_list"` // entry keys whose uid/gid must match the baseline
+	MandatoryList string          `json:"mandatory_list"` // entry keys that must exist on hosts; blank means all entries are mandatory
 	Description   string          `json:"description"`
 	CreatedBy     string          `json:"created_by"`
 }
@@ -97,6 +100,7 @@ func (s *DefaultBaselineService) Create(ctx context.Context, req CreateBaselineR
 		Version:        req.Version,
 		IsActive:       false,
 		CheckIDs:       req.CheckIDs,
+		Mandatory:      req.Mandatory,
 		Description:    req.Description,
 		CreatedBy:      req.CreatedBy,
 		ApprovalStatus: "pending",
@@ -146,6 +150,7 @@ func (s *DefaultBaselineService) Update(ctx context.Context, id uuid.UUID, req U
 	baseline.EntryValue = req.EntryValue
 	baseline.Version = req.Version
 	baseline.CheckIDs = req.CheckIDs
+	baseline.Mandatory = req.Mandatory
 	baseline.Description = req.Description
 	baseline.UpdatedAt = time.Now().UTC()
 
@@ -183,7 +188,14 @@ func (s *DefaultBaselineService) UploadMasterFile(ctx context.Context, req Uploa
 		return 0, err
 	}
 
-	entries, err := parseMasterFileContent(req.FileType, req.Content, parsePrivilegeList(req.PrivilegeList))
+	privileged := parseKeyList(req.PrivilegeList)
+	// A blank mandatory list preserves the original behavior: every entry in
+	// the uploaded file must exist on hosts. When provided, only the listed
+	// keys are mandatory and all other entries become optional.
+	mandatory := parseKeyList(req.MandatoryList)
+	allMandatory := strings.TrimSpace(req.MandatoryList) == ""
+
+	entries, err := parseMasterFileContent(req.FileType, req.Content, privileged, mandatory, allMandatory)
 	if err != nil {
 		return 0, fmt.Errorf("parse master file: %w", err)
 	}
@@ -350,11 +362,10 @@ func (s *DefaultBaselineService) OSVersions() map[string][]int {
 	return versions
 }
 
-// parsePrivilegeList parses the privilege list textarea into a key set.
-// Keys may be separated by newlines, commas, or whitespace; blank lines and
-// # comments are ignored. Keys name entries whose uid/gid are compared
-// against the baseline; all other entries ignore uid/gid differences.
-func parsePrivilegeList(content string) map[string]bool {
+// parseKeyList parses a key list (privilege list, mandatory list) into a key
+// set. Keys may be separated by newlines, commas, or whitespace; blank lines
+// and # comments are ignored.
+func parseKeyList(content string) map[string]bool {
 	set := make(map[string]bool)
 	for _, raw := range strings.Split(content, "\n") {
 		line := strings.TrimSpace(raw)
@@ -371,7 +382,11 @@ func parsePrivilegeList(content string) map[string]bool {
 	return set
 }
 
-func parseMasterFileContent(fileType models.FileType, content string, privileged map[string]bool) ([]repository.BaselineEntryInput, error) {
+// parseMasterFileContent parses pasted master file text into bulk insert
+// inputs. privileged marks entries whose uid/gid are compared; mandatory
+// marks entries that must exist on hosts. When allMandatory is set (blank
+// mandatory list), every entry is mandatory regardless of the mandatory set.
+func parseMasterFileContent(fileType models.FileType, content string, privileged, mandatory map[string]bool, allMandatory bool) ([]repository.BaselineEntryInput, error) {
 	var entries []repository.BaselineEntryInput
 	seen := make(map[string]bool)
 
@@ -410,6 +425,7 @@ func parseMasterFileContent(fileType models.FileType, content string, privileged
 			EntryKey:   key,
 			EntryValue: value,
 			CheckIDs:   privileged[key],
+			Mandatory:  allMandatory || mandatory[key],
 		})
 	}
 

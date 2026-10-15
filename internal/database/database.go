@@ -243,6 +243,26 @@ func runManualMigrations() error {
 		return fmt.Errorf("baseline approval migration failed: %w", err)
 	}
 
+	// Mandatory defaults to true so existing baselines keep their prior
+	// semantics: every baseline entry had to be present on the host. The
+	// UPDATE/SET NOT NULL also repair the nullable column GORM AutoMigrate
+	// may have created before this migration ran.
+	baselineMandatoryMigration := `
+		ALTER TABLE master_baselines
+			ADD COLUMN IF NOT EXISTS mandatory BOOLEAN NOT NULL DEFAULT true;
+
+		UPDATE master_baselines
+		SET mandatory = true
+		WHERE mandatory IS NULL;
+
+		ALTER TABLE master_baselines
+			ALTER COLUMN mandatory SET NOT NULL,
+			ALTER COLUMN mandatory SET DEFAULT true;
+	`
+	if err := db.Exec(baselineMandatoryMigration).Error; err != nil {
+		return fmt.Errorf("baseline mandatory migration failed: %w", err)
+	}
+
 	deviationApprovalMigration := `
 		ALTER TABLE allowed_deviations
 			ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT '',

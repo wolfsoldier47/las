@@ -57,11 +57,23 @@ interface ScanDetailData {
 interface DataTableProps {
   selectedHost?: string
   onSelectHost?: (selection: { hostname: string; hostId: string; scanJobId: string }) => void
+  // Selected scan plus the recent-history list for the scan picker. When
+  // omitted the table falls back to the newest scan (standalone usage).
+  scanId?: string | null
+  scans?: ScanOption[]
+  onScanChange?: (id: string) => void
+}
+
+export interface ScanOption {
+  id: string
+  status: string
+  created_at: string
+  successful_hosts: number
 }
 
 const DEFAULT_LIMIT = 20
 
-export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
+export function DataTable({ selectedHost, onSelectHost, scanId, scans, onScanChange }: DataTableProps) {
   const [detail, setDetail] = useState<ScanDetailData | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [page, setPage] = useState(1)
@@ -72,20 +84,30 @@ export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
     setPage(1)
   }, [searchTerm, limit])
 
+  // Reset to the first page whenever a different scan is selected.
+  useEffect(() => {
+    setPage(1)
+  }, [scanId])
+
   useEffect(() => {
     let cancelled = false
 
-    api.get('/scans')
-      .then((res) => {
-        const scans: ScanJob[] = res.data || []
-        if (scans.length === 0) return
-        const latest = scans[0]
+    const load = async () => {
+      try {
+        // Resolve which scan to show: the dashboard's selection, or the
+        // newest scan when used standalone.
+        let id = scanId
+        if (!id) {
+          const res = await api.get('/scans?page=1&limit=1')
+          const data = res.data
+          const list: ScanJob[] = Array.isArray(data) ? data : (data?.items ?? [])
+          id = list[0]?.id
+          if (!id) return
+        }
         // Incident counts come from a cheap aggregate; full incident rows are
         // loaded per host on demand via /scans/:id/hosts/:hostId.
-        return api.get(`/scans/${latest.id}?page=${page}&limit=${limit}`)
-      })
-      .then((res) => {
-        if (cancelled || !res) return
+        const res = await api.get(`/scans/${id}?page=${page}&limit=${limit}`)
+        if (cancelled) return
         const data: ScanDetailData = res.data
         const results = (data.results || []).map((r) => ({
           ...r,
@@ -105,13 +127,17 @@ export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
             })
           }
         }
-      })
-      .catch((err) => setError(err.message))
+      } catch (err: any) {
+        if (!cancelled) setError(err.message)
+      }
+    }
+
+    load()
 
     return () => {
       cancelled = true
     }
-  }, [page, limit])
+  }, [scanId, page, limit])
 
   const rows = (detail?.results || []).map((r) => {
     const counts = r.incident_counts || { passwd: 0, group: 0, total: 0, open: 0 }
@@ -179,6 +205,23 @@ export function DataTable({ selectedHost, onSelectHost }: DataTableProps) {
             </Link>
           </div>
         </div>
+        {scans && scans.length > 0 && onScanChange && (
+          <div className="flex items-center gap-2 mb-3">
+            <label className="text-xs text-muted-foreground whitespace-nowrap">Scan history:</label>
+            <select
+              value={scanId ?? ''}
+              onChange={(e) => onScanChange(e.target.value)}
+              className="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            >
+              {scans.map((s) => (
+                <option key={s.id} value={s.id}>
+                  #{s.id.slice(0, 8)} — {new Date(s.created_at).toLocaleString()} ({s.status},{' '}
+                  {s.successful_hosts} hosts)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="relative">
           <svg className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>

@@ -156,11 +156,15 @@ func (s *DefaultComparisonService) compareFile(
 	// Build expected map from the active baselines. Baselines are global per OS type/version.
 	expected := make(map[string]string)
 	checkIDs := make(map[string]bool)
+	mandatory := make(map[string]bool)
 	for i := range baselines {
 		b := &baselines[i]
 		expected[b.EntryKey] = b.EntryValue
 		if b.CheckIDs {
 			checkIDs[b.EntryKey] = true
+		}
+		if b.Mandatory {
+			mandatory[b.EntryKey] = true
 		}
 	}
 
@@ -187,8 +191,12 @@ func (s *DefaultComparisonService) compareFile(
 	for key, expectedValue := range expected {
 		actualValue, exists := actual[key]
 		if !exists {
-			// A missing expected entry is always a deviation; allowed deviations only
-			// cover differences in values or extra entries, not absent baseline entries.
+			// A missing mandatory entry is a deviation. Optional (non-mandatory)
+			// entries may be absent from the host; allowed deviations only cover
+			// differences in values or extra entries, not absent baseline entries.
+			if !mandatory[key] {
+				continue
+			}
 			if err := s.createIncident(ctx, result, host, fileType, key, &expectedValue, "", models.IncidentSeverityCritical); err != nil {
 				return 0, err
 			}

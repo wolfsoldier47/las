@@ -386,6 +386,178 @@ func TestCompareScanResult_CreatesIncidentForDeviation(t *testing.T) {
 	}
 }
 
+func TestCompareScanResult_MandatoryVsOptionalMissingKey(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	scanResultID := uuid.New()
+	scanJobID := uuid.New()
+
+	host := &models.Host{
+		ID:        hostID,
+		Hostname:  "host001.example.com",
+		OSType:    models.OSTypeLinux,
+		OSVersion: "7.1",
+	}
+
+	scanRepo := newMemScanRepo()
+	scanRepo.CreateScanResult(ctx, &models.ScanResult{
+		ID:        scanResultID,
+		ScanJobID: scanJobID,
+		HostID:    hostID,
+	})
+
+	snapshotRepo := newMemSnapshotRepo()
+	snapshotRepo.Create(ctx, &models.HostFileSnapshot{
+		ID:           uuid.New(),
+		ScanResultID: scanResultID,
+		HostID:       hostID,
+		ScanJobID:    scanJobID,
+		FileType:     models.FileTypePasswd,
+		RawContent:   "root:x:0:0:root:/root:/bin/bash",
+	})
+
+	baselineRepo := &memBaselineRepo{
+		baselines: []models.MasterBaseline{
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "root",
+				EntryValue: "x:0:0:root:/root:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+				Mandatory:  true,
+			},
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "musthave",
+				EntryValue: "x:50:50::/home/mh:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+				Mandatory:  true,
+			},
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "optional",
+				EntryValue: "x:60:60::/home/opt:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+				Mandatory:  false,
+			},
+		},
+	}
+
+	incidentRepo := &memIncidentRepo{}
+
+	comparison := NewDefaultComparisonService(
+		scanRepo,
+		snapshotRepo,
+		newMemHostRepo(host),
+		baselineRepo,
+		&memDeviationRepo{},
+		incidentRepo,
+	)
+
+	if err := comparison.CompareScanResult(ctx, scanResultID); err != nil {
+		t.Fatalf("CompareScanResult failed: %v", err)
+	}
+
+	// Only the missing mandatory key raises an incident; the missing optional
+	// key is allowed to be absent.
+	if len(incidentRepo.incidents) != 1 {
+		t.Fatalf("expected 1 incident, got %d", len(incidentRepo.incidents))
+	}
+	if incidentRepo.incidents[0].EntryKey != "musthave" {
+		t.Errorf("expected incident for musthave, got %s", incidentRepo.incidents[0].EntryKey)
+	}
+	if incidentRepo.incidents[0].Severity != models.IncidentSeverityCritical {
+		t.Errorf("expected critical severity for missing mandatory key, got %s", incidentRepo.incidents[0].Severity)
+	}
+}
+
+func TestCompareScanResult_OptionalKeyValueMismatchStillDeviates(t *testing.T) {
+	ctx := context.Background()
+	hostID := uuid.New()
+	scanResultID := uuid.New()
+	scanJobID := uuid.New()
+
+	host := &models.Host{
+		ID:        hostID,
+		Hostname:  "host001.example.com",
+		OSType:    models.OSTypeLinux,
+		OSVersion: "7.1",
+	}
+
+	scanRepo := newMemScanRepo()
+	scanRepo.CreateScanResult(ctx, &models.ScanResult{
+		ID:        scanResultID,
+		ScanJobID: scanJobID,
+		HostID:    hostID,
+	})
+
+	// The optional key exists on the host but with a wrong shell.
+	snapshotRepo := newMemSnapshotRepo()
+	snapshotRepo.Create(ctx, &models.HostFileSnapshot{
+		ID:           uuid.New(),
+		ScanResultID: scanResultID,
+		HostID:       hostID,
+		ScanJobID:    scanJobID,
+		FileType:     models.FileTypePasswd,
+		RawContent:   "root:x:0:0:root:/root:/bin/bash\noptional:x:60:60::/home/opt:/sbin/nologin",
+	})
+
+	baselineRepo := &memBaselineRepo{
+		baselines: []models.MasterBaseline{
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "root",
+				EntryValue: "x:0:0:root:/root:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+				Mandatory:  true,
+			},
+			{
+				ID:         uuid.New(),
+				OSType:     models.OSTypeLinux,
+				FileType:   models.FileTypePasswd,
+				EntryKey:   "optional",
+				EntryValue: "x:60:60::/home/opt:/bin/bash",
+				Version:    7,
+				IsActive:   true,
+				Mandatory:  false,
+			},
+		},
+	}
+
+	incidentRepo := &memIncidentRepo{}
+
+	comparison := NewDefaultComparisonService(
+		scanRepo,
+		snapshotRepo,
+		newMemHostRepo(host),
+		baselineRepo,
+		&memDeviationRepo{},
+		incidentRepo,
+	)
+
+	if err := comparison.CompareScanResult(ctx, scanResultID); err != nil {
+		t.Fatalf("CompareScanResult failed: %v", err)
+	}
+
+	if len(incidentRepo.incidents) != 1 {
+		t.Fatalf("expected 1 incident, got %d", len(incidentRepo.incidents))
+	}
+	if incidentRepo.incidents[0].EntryKey != "optional" {
+		t.Errorf("expected incident for optional value mismatch, got %s", incidentRepo.incidents[0].EntryKey)
+	}
+}
+
 func TestCompareScanResult_AllowedDeviationDoesNotCreateIncident(t *testing.T) {
 	ctx := context.Background()
 	hostID := uuid.New()
