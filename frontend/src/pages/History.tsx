@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/client'
+import OsBadge from '../components/OsBadge'
 
 interface ScanJob {
   id: string
   ansible_job_id?: string
   job_template_id: number
+  os_type?: string
   limit?: string
   status: string
   initiated_by?: string
@@ -156,6 +158,7 @@ export default function History() {
               <tr className="border-b border-border">
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Job ID</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Template ID</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Target Cluster</th>
                 <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Limit</th>
                 <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">Hosts</th>
                 <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">Successful</th>
@@ -173,6 +176,7 @@ export default function History() {
                     </Link>
                   </td>
                   <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{s.job_template_id}</td>
+                  <td className="px-5 py-3"><OsBadge osType={s.os_type} /></td>
                   <td className="px-5 py-3 text-muted-foreground text-xs">{s.limit || '-'}</td>
                   <td className="px-5 py-3 text-right text-muted-foreground text-xs">{s.callbacks_received}</td>
                   <td className="px-5 py-3 text-right text-green-500 text-xs font-medium">{s.successful_hosts}</td>

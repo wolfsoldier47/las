@@ -200,6 +200,14 @@ func runManualMigrations() error {
 		return fmt.Errorf("snapshot host/type/time index migration failed: %w", err)
 	}
 
+	snapshotScanJobIndexMigration := `
+		CREATE INDEX IF NOT EXISTS idx_host_file_snapshots_scan_job
+			ON host_file_snapshots(scan_job_id);
+	`
+	if err := db.Exec(snapshotScanJobIndexMigration).Error; err != nil {
+		return fmt.Errorf("snapshot scan job index migration failed: %w", err)
+	}
+
 	scanResultBaselineMigration := `
 		ALTER TABLE scan_results
 			ADD COLUMN IF NOT EXISTS baseline_version_at_scan INT,

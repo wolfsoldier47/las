@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ULAS Analytics — Mockup (dummy data)</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #171e2e;
+    --panel-2: #1d2638;
+    --border: #2a3550;
+    --text: #e6ebf5;
+    --muted: #8b96ad;
+    --accent: #4f8ef7;
+    --green: #3fb96b;
+    --amber: #e0a63c;
+    --red: #e05c5c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .topbar h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  .topbar .env {
+    font-size: 11px; color: var(--amber);
+    border: 1px solid var(--amber); border-radius: 4px; padding: 2px 8px;
+  }
+  .wrap { padding: 24px 28px; max-width: 1280px; margin: 0 auto; }
+
+  /* view + scan selectors */
+  .viewtabs { display: flex; gap: 4px; margin-bottom: 14px; }
+  .viewtab {
+    padding: 8px 18px; border-radius: 6px; cursor: pointer;
+    color: var(--muted); border: 1px solid transparent; font-weight: 600;
+  }
+  .viewtab.active { background: var(--panel); color: var(--text); border-color: var(--border); }
+  .scanbar {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 14px;
+  }
+  .scanbar label { color: var(--muted); font-size: 12px; }
+  select, .search {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px;
+    font-size: 13px;
+  }
+  .search:focus, select:focus { outline: none; border-color: var(--accent); }
+  .compare-toggle {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    color: var(--muted); font-size: 13px; cursor: pointer;
+  }
+  .compare-toggle input { accent-color: var(--accent); }
+
+  /* summary cards */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 18px;
+  }
+  .card .label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .card .value { font-size: 26px; font-weight: 700; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .delta { font-size: 13px; font-weight: 600; margin-left: 6px; }
+  .delta.up { color: var(--green); }
+  .delta.down { color: var(--red); }
+
+  /* filters */
+  .filters {
+    display: flex; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 14px;
+  }
+  .tabs { display: flex; gap: 4px; }
+  .tab {
+    padding: 6px 14px; border-radius: 6px; cursor: pointer;
+    color: var(--muted); border: 1px solid transparent;
+  }
+  .tab.active { background: var(--panel-2); color: var(--text); border-color: var(--border); }
+  .search { flex: 1; max-width: 320px; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; }
+  .table-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+  th, td { padding: 10px 14px; text-align: left; }
+  th {
+    color: var(--muted); font-weight: 600; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .04em;
+    background: var(--panel-2);
+    cursor: pointer; user-select: none;
+  }
+  th:hover { color: var(--text); }
+  tbody tr { border-top: 1px solid var(--border); cursor: pointer; }
+  tbody tr:hover { background: rgba(79,142,247,.06); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .badge.passwd { background: rgba(79,142,247,.15); color: var(--accent); }
+  .badge.group  { background: rgba(63,185,107,.15); color: var(--green); }
+  .badge.added   { background: rgba(63,185,107,.15); color: var(--green); }
+  .badge.removed { background: rgba(224,92,92,.15); color: var(--red); }
+  .badge.changed { background: rgba(224,166,60,.15); color: var(--amber); }
+  .num { font-variant-numeric: tabular-nums; }
+  .bar-cell { width: 140px; }
+  .bar-bg { background: var(--panel-2); border-radius: 3px; height: 6px; width: 120px; }
+  .bar-fill { background: var(--accent); border-radius: 3px; height: 6px; }
+
+  /* drill-down */
+  .detail td { background: var(--panel-2); cursor: default; }
+  .detail-inner { padding: 8px 4px; display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+  .detail h4 { margin: 4px 0 10px; font-size: 13px; color: var(--muted); }
+  .mini-table td, .mini-table th { padding: 6px 10px; font-size: 13px; }
+  .mini-table th { background: transparent; }
+  .trend { display: flex; align-items: flex-end; gap: 4px; height: 90px; padding-top: 10px; }
+  .trend div { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .8; }
+  .trend-labels { display: flex; gap: 4px; color: var(--muted); font-size: 10px; }
+  .trend-labels span { flex: 1; text-align: center; }
+
+  /* host explorer */
+  .host-grid { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
+  .host-list { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .host-list input { width: 100%; border: none; border-bottom: 1px solid var(--border); border-radius: 0; }
+  .host-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .host-item:hover { background: rgba(79,142,247,.06); }
+  .host-item.active { background: var(--panel-2); border-left: 3px solid var(--accent); }
+  .host-item .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .file-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .file-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .file-card h3 {
+    margin: 0; padding: 12px 16px; font-size: 13px;
+    background: var(--panel-2); border-bottom: 1px solid var(--border);
+  }
+  .file-card td, .file-card th { padding: 7px 14px; font-size: 12.5px; }
+  .file-card th { background: transparent; cursor: default; }
+  .file-card tbody tr { cursor: default; }
+  .dot { display:inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.ok { background: var(--green); }
+  .dot.dev { background: var(--red); }
+  .dot.exc { background: var(--amber); }
+  .mono { font-family: monospace; font-size: 12px; color: var(--muted); }
+  .legend { display: flex; gap: 16px; color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+
+  .pager {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; color: var(--muted); font-size: 13px;
+    border-top: 1px solid var(--border);
+  }
+  .pager button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 12px; cursor: pointer; margin-left: 6px;
+  }
+  .pager button:disabled { opacity: .4; cursor: default; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>ULAS Analytics</h1>
+  <span class="env">MOCKUP — dummy data</span>
+  <span style="margin-left:auto; color:var(--muted); font-size:13px;">signed in as <b style="color:var(--text)">comsiab12</b> (admin)</span>
+</div>
+
+<div class="wrap">
+
+  <!-- view switch -->
+  <div class="viewtabs">
+    <div class="viewtab active" id="vt-keys" onclick="switchView('keys')">Key Analytics</div>
+    <div class="viewtab" id="vt-hosts" onclick="switchView('hosts')">Host Explorer</div>
+  </div>
+
+  <!-- scan selector / compare -->
+  <div class="scanbar">
+    <label>Scan</label>
+    <select id="scanA" onchange="render()">
+      <option value="451853" selected>#451853 · Oct 9, 2026 · 4,000 hosts</option>
+      <option value="451120">#451120 · Sep 25, 2026 · 4,000 hosts</option>
+      <option value="449801">#449801 · Aug 28, 2026 · 3,972 hosts</option>
+      <option value="448200">#448200 · Jul 31, 2026 · 3,955 hosts</option>
+    </select>
+    <span id="scanB-wrap" style="display:none">
+      <label>vs</label>
+      <select id="scanB" onchange="render()">
+        <option value="451120" selected>#451120 · Sep 25, 2026</option>
+        <option value="449801">#449801 · Aug 28, 2026</option>
+        <option value="448200">#448200 · Jul 31, 2026</option>
+      </select>
+    </span>
+    <label class="compare-toggle" onclick="toggleCompare()">
+      <input type="checkbox" id="compareChk"> Compare two scans
+    </label>
+  </div>
+
+  <!-- ================= KEY ANALYTICS ================= -->
+  <div id="view-keys">
+    <div class="cards" id="cards"></div>
+
+    <div class="filters">
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab(this,'all')">All</div>
+        <div class="tab" onclick="switchTab(this,'passwd')">/etc/passwd</div>
+        <div class="tab" onclick="switchTab(this,'group')">/etc/group</div>
+      </div>
+      <input class="search" id="search" placeholder="Search key… (e.g. wheel, daemon, oracle)" oninput="render()">
+      <span style="color:var(--muted); font-size:12px;">Sort:</span>
+      <select id="sort" onchange="render()">
+        <option value="hosts">Host count</option>
+        <option value="occ">Occurrences</option>
+        <option value="key">Key name</option>
+        <option value="coverage">Fleet coverage %</option>
+        <option id="sort-delta" value="delta" style="display:none">Δ between scans</option>
+      </select>
+    </div>
+
+    <div class="table-card">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="pager">
+        <span id="pager-info"></span>
+        <span>
+          <button onclick="page(0)" id="prev">← Prev</button>
+          <button onclick="page(1)" id="next">Next →</button>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= HOST EXPLORER ================= -->
+  <div id="view-hosts" style="display:none">
+    <div class="legend">
+      <span><span class="dot ok"></span>Matches baseline</span>
+      <span><span class="dot dev"></span>Deviation (incident opened)</span>
+      <span><span class="dot exc"></span>Covered by exception</span>
+      <span style="margin-left:auto">Entries shown are the actual file contents captured in the selected scan</span>
+    </div>
+    <div class="host-grid">
+      <div class="host-list">
+        <input class="search" style="max-width:none" id="hostSearch" placeholder="Search host…" oninput="renderHostList()">
+        <div id="hostItems"></div>
+      </div>
+      <div class="file-cols">
+        <div class="file-card">
+          <h3>/etc/passwd — <span id="hostName-passwd" style="color:var(--accent)"></span></h3>
+          <table>
+            <thead><tr><th style="width:24px"></th><th>Key</th><th>Value</th></tr></thead>
+            <tbody id="passwdRows"></tbody>
+          </table>
+        </div>
+        <div class="file-card">
+          <h3>/etc/group — <span id="hostName-group" style="color:var(--accent)"></span></h3>
+          <table>
+            <thead><tr><th style="width:24px"></th><th>Key</th><th>Value</th></tr></thead>
+            <tbody id="groupRows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ---------- dummy data ----------
+const TOTAL_HOSTS = 4000;
+// hostsA / hostsB => per-scan host counts so compare mode shows real deltas
+const KEYS = [
+  { key:"root",        file:"passwd", hostsA:4000, hostsB:4000 },
+  { key:"daemon",      file:"passwd", hostsA:4000, hostsB:4000 },
+  { key:"bin",         file:"passwd", hostsA:4000, hostsB:4000 },
+  { key:"sync",        file:"passwd", hostsA:4000, hostsB:4000 },
+  { key:"nobody",      file:"passwd", hostsA:4000, hostsB:4000 },
+  { key:"sshd",        file:"passwd", hostsA:3987, hostsB:3987 },
+  { key:"ansible",     file:"passwd", hostsA:3102, hostsB:3044 },
+  { key:"splunk",      file:"passwd", hostsA:2904, hostsB:2541 },
+  { key:"comsiab12",   file:"passwd", hostsA:2140, hostsB:2140 },
+  { key:"oracle",      file:"passwd", hostsA:1876, hostsB:1920 },
+  { key:"tss",         file:"passwd", hostsA:1543, hostsB:1102 },
+  { key:"gnome-initial-setup", file:"passwd", hostsA:1208, hostsB:1195 },
+  { key:"gluster",     file:"passwd", hostsA:1187, hostsB:1187 },
+  { key:"tcpdump",     file:"passwd", hostsA:992,  hostsB:992 },
+  { key:"nvidia-persistenced", file:"passwd", hostsA:461, hostsB:533 },
+  { key:"zabbix",      file:"passwd", hostsA:312,  hostsB:298 },
+  { key:"legacyapp",   file:"passwd", hostsA:18,   hostsB:0,  removedInB:true },
+  { key:"tempaudit9",  file:"passwd", hostsA:0,    hostsB:12, addedInB:true },
+  { key:"wheel",       file:"group",  hostsA:4000, hostsB:4000 },
+  { key:"root",        file:"group",  hostsA:4000, hostsB:4000 },
+  { key:"utmp",        file:"group",  hostsA:4000, hostsB:4000 },
+  { key:"docker",      file:"group",  hostsA:2745, hostsB:2801 },
+  { key:"video",       file:"group",  hostsA:3881, hostsB:3881 },
+  { key:"sambashare",  file:"group",  hostsA:1988, hostsB:1988 },
+  { key:"oinstall",    file:"group",  hostsA:1876, hostsB:1920 },
+  { key:"dba",         file:"group",  hostsA:1876, hostsB:1920 },
+  { key:"oldadmins",   file:"group",  hostsA:7,    hostsB:0,  removedInB:true },
+];
+const TREND = [ .55, .62, .61, .70, .78, .84 ];
+const HOSTS_SAMPLE = {
+  "oracle":  ["server0001.dbz.example.com","server0147.dbz.example.com","server0311.dbz.example.com","server0422.dbz.example.com","server0890.dbz.example.com"],
+  "legacyapp":["server2201.dbz.example.com","server2203.dbz.example.com","server2207.dbz.example.com"],
+};
+
+// host explorer dummy data: state per entry => ok | dev | exc
+const HOSTS = [
+  { name:"server0001.dbz.example.com", stage:"prod", dc:"ffm", os:"RHEL 8.10" },
+  { name:"server0147.dbz.example.com", stage:"entw", dc:"lon", os:"RHEL 9.4" },
+  { name:"server0311.dbz.example.com", stage:"prod", dc:"ffm", os:"RHEL 8.10" },
+  { name:"server2201.dbz.example.com", stage:"prod", dc:"sgp", os:"RHEL 7.9" },
+  { name:"server2203.dbz.example.com", stage:"tuc",  dc:"ffm", os:"RHEL 8.10" },
+];
+const HOST_FILES = {
+  "server0001.dbz.example.com": {
+    passwd: [
+      ["root","x:0:0:root:/root:/bin/bash","ok"],
+      ["daemon","x:2:2:daemon:/sbin:/sbin/nologin","ok"],
+      ["sshd","x:74:74:Privilege-separated SSH:/var/empty/sshd:/sbin/nologin","ok"],
+      ["ansible","x:1001:1001::/home/ansible:/bin/bash","ok"],
+      ["oracle","x:1002:1003::/home/oracle:/bin/bash","exc"],
+      ["tempaudit9","x:1010:1010:temp audit acct:/home/tempaudit9:/bin/bash","dev"],
+    ],
+    group: [
+      ["root","x:0:","ok"],
+      ["wheel","x:10:ansible,comsiab12","ok"],
+      ["docker","x:999:ansible","ok"],
+      ["dba","x:1003:oracle","exc"],
+      ["oldadmins","x:1200:legacy1,legacy2","dev"],
+    ],
+  },
+  "server0147.dbz.example.com": {
+    passwd: [
+      ["root","x:0:0:root:/root:/bin/bash","ok"],
+      ["daemon","x:2:2:daemon:/sbin:/sbin/nologin","ok"],
+      ["sshd","x:74:74:Privilege-separated SSH:/var/empty/sshd:/sbin/nologin","ok"],
+      ["comsiab12","x:1001:1001::/home/comsiab12:/bin/bash","ok"],
+      ["splunk","x:1004:1004::/opt/splunkforwarder:/bin/bash","dev"],
+    ],
+    group: [
+      ["root","x:0:","ok"],
+      ["wheel","x:10:comsiab12","ok"],
+      ["sambashare","x:1005:","ok"],
+    ],
+  },
+};
+const defaultHostFiles = () => ({
+  passwd: [
+    ["root","x:0:0:root:/root:/bin/bash","ok"],
+    ["daemon","x:2:2:daemon:/sbin:/sbin/nologin","ok"],
+    ["bin","x:1:1:bin:/bin:/sbin/nologin","ok"],
+    ["sshd","x:74:74:Privilege-separated SSH:/var/empty/sshd:/sbin/nologin","ok"],
+    ["ansible","x:1001:1001::/home/ansible:/bin/bash","ok"],
+  ],
+  group: [
+    ["root","x:0:","ok"],
+    ["wheel","x:10:ansible","ok"],
+    ["utmp","x:22:","ok"],
+  ],
+});
+
+let state = { view:"keys", tab:"all", page:0, compare:false, open:null, host:HOSTS[0].name };
+const PAGE_SIZE = 10;
+
+function currentHosts(r) {
+  // in compare mode, "current" column = scan A; otherwise scan A too
+  return state.compare ? r.hostsA : r.hostsA;
+}
+
+function filtered() {
+  let rows = KEYS.filter(r => state.tab==="all" || r.file===state.tab);
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  if (q) rows = rows.filter(r => r.key.toLowerCase().includes(q));
+  const sort = document.getElementById("sort").value;
+  rows = rows.slice().sort((a,b) => {
+    if (sort==="key") return a.key.localeCompare(b.key);
+    if (sort==="occ") return b.hostsA-a.hostsA;
+    if (sort==="coverage") return b.hostsA/TOTAL_HOSTS - a.hostsA/TOTAL_HOSTS;
+    if (sort==="delta") return Math.abs((b.hostsB-b.hostsA)) - Math.abs((a.hostsB-a.hostsA));
+    return b.hostsA-a.hostsA;
+  });
+  return rows;
+}
+
+function deltaCell(r) {
+  const d = r.hostsB - r.hostsA;
+  if (d === 0) return `<span style="color:var(--muted)">—</span>`;
+  const cls = d > 0 ? "up" : "down";
+  const arrow = d > 0 ? "▲" : "▼";
+  return `<span class="delta ${cls}">${arrow} ${Math.abs(d)}</span>`;
+}
+function changeBadge(r) {
+  if (r.hostsA === 0 && r.hostsB > 0) return `<span class="badge added">new</span>`;
+  if (r.hostsB === 0 && r.hostsA > 0) return `<span class="badge removed">gone</span>`;
+  if (r.hostsA !== r.hostsB) return `<span class="badge changed">changed</span>`;
+  return "";
+}
+
+function renderCards() {
+  const uniqP = new Set(KEYS.filter(k=>k.file==="passwd").map(k=>k.key)).size;
+  const uniqG = new Set(KEYS.filter(k=>k.file==="group").map(k=>k.key)).size;
+  let html = `
+    <div class="card"><div class="label">Hosts scanned</div>
+      <div class="value">4,000</div>
+      <div class="sub" id="cardScan">scan #451853 · Oct 9, 2026</div></div>
+    <div class="card"><div class="label">Unique keys (passwd / group)</div>
+      <div class="value">${uniqP} / ${uniqG}</div>
+      <div class="sub">in selected scan</div></div>`;
+  if (state.compare) {
+    const added = KEYS.filter(r=>r.hostsA===0&&r.hostsB>0).length;
+    const removed = KEYS.filter(r=>r.hostsB===0&&r.hostsA>0).length;
+    const changed = KEYS.filter(r=>r.hostsA>0&&r.hostsB>0&&r.hostsA!==r.hostsB).length;
+    html += `
+    <div class="card"><div class="label">Keys gained vs scan B</div>
+      <div class="value" style="color:var(--green)">${added}</div><div class="sub">keys appearing that weren't in scan A</div></div>
+    <div class="card"><div class="label">Keys lost / changed</div>
+      <div class="value"><span style="color:var(--red)">${removed}</span> <span style="color:var(--muted);font-size:16px">/</span> <span style="color:var(--amber)">${changed}</span></div>
+      <div class="sub">gone vs changed host counts</div></div>`;
+  } else {
+    html += `
+    <div class="card"><div class="label">Keys on 100% of fleet</div>
+      <div class="value" style="color:var(--amber)">17</div>
+      <div class="sub">24 keys on &lt; 1% of hosts — possible leftovers</div></div>
+    <div class="card"><div class="label">Entries parsed</div>
+      <div class="value">54,047</div><div class="sub">passwd + group lines in this scan</div></div>`;
+  }
+  document.getElementById("cards").innerHTML = html;
+}
+
+function render() {
+  renderCards();
+  const rows = filtered();
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  state.page = Math.min(state.page, pages-1);
+  const slice = rows.slice(state.page*PAGE_SIZE, (state.page+1)*PAGE_SIZE);
+
+  // header
+  const aId = document.getElementById("scanA").value;
+  document.getElementById("cardScan").textContent =
+    (state.compare ? `comparing #${aId} vs #${document.getElementById("scanB").value}` : `scan #${aId}`) + " · Oct 9, 2026";
+
+  document.getElementById("thead").innerHTML = state.compare ? `
+    <tr><th>#</th><th>Key</th><th>File</th><th>Change</th>
+      <th>Hosts (A)</th><th>Hosts (B)</th><th>Δ</th>
+      <th class="bar-cell">Coverage (A)</th></tr>` : `
+    <tr><th>#</th><th>Key</th><th>File</th>
+      <th>Hosts</th><th class="bar-cell">Fleet coverage</th>
+      <th>Occurrences</th><th>First seen</th><th>Last seen</th></tr>`;
+
+  let html = "";
+  slice.forEach((r, i) => {
+    const idx = state.page*PAGE_SIZE + i + 1;
+    if (state.compare) {
+      const cov = r.hostsA / TOTAL_HOSTS * 100;
+      html += `<tr onclick="toggle('${r.key}|${r.file}')">
+        <td class="num" style="color:var(--muted)">${idx}</td>
+        <td><b>${r.key}</b></td>
+        <td><span class="badge ${r.file}">${r.file}</span></td>
+        <td>${changeBadge(r)}</td>
+        <td class="num">${r.hostsA.toLocaleString()}</td>
+        <td class="num">${r.hostsB.toLocaleString()}</td>
+        <td class="num">${deltaCell(r)}</td>
+        <td><div style="display:flex;align-items:center;gap:8px">
+          <div class="bar-bg"><div class="bar-fill" style="width:${Math.max(2,cov)}%"></div></div>
+          <span class="num" style="font-size:12px;color:var(--muted)">${cov.toFixed(1)}%</span>
+        </div></td>
+      </tr>`;
+    } else {
+      const cov = r.hostsA / TOTAL_HOSTS * 100;
+      html += `<tr onclick="toggle('${r.key}|${r.file}')">
+        <td class="num" style="color:var(--muted)">${idx}</td>
+        <td><b>${r.key}</b></td>
+        <td><span class="badge ${r.file}">${r.file}</span></td>
+        <td class="num">${r.hostsA.toLocaleString()}</td>
+        <td><div style="display:flex;align-items:center;gap:8px">
+          <div class="bar-bg"><div class="bar-fill" style="width:${Math.max(2,cov)}%"></div></div>
+          <span class="num" style="font-size:12px;color:var(--muted)">${cov.toFixed(1)}%</span>
+        </div></td>
+        <td class="num">${r.hostsA.toLocaleString()}</td>
+        <td style="color:var(--muted)">2025-03-11</td>
+        <td style="color:var(--muted)">2026-10-09</td>
+      </tr>`;
+      if (state.open === `${r.key}|${r.file}`) {
+        const hosts = HOSTS_SAMPLE[r.key] ||
+          Array.from({length:5},(_,k)=>`server${String(1000+k*733).padStart(4,"0")}.dbz.example.com`);
+        html += `<tr class="detail"><td colspan="8">
+          <div class="detail-inner">
+            <div>
+              <h4>Sample of hosts with this key (${r.hostsA.toLocaleString()} total — paginated in real API)</h4>
+              <table class="mini-table">
+                <tr><th>Machine</th><th>Stage</th><th>DC</th><th>Value</th></tr>
+                ${hosts.map(h => `<tr><td>${h}</td>
+                  <td><span class="badge passwd">${Math.random()>.5?"prod":"entw"}</span></td>
+                  <td>${Math.random()>.5?"ffm":"lon"}</td>
+                  <td style="color:var(--muted); font-family:monospace; font-size:12px">
+                    ${r.file==="passwd" ? "x:1001:1001::/home/"+r.key+":/bin/bash" : "x:1001:user1,user2"}
+                  </td></tr>`).join("")}
+              </table>
+            </div>
+            <div>
+              <h4>Occurrences across last 6 scans</h4>
+              <div class="trend">${TREND.map(v=>`<div style="height:${v*100}%"></div>`).join("")}</div>
+              <div class="trend-labels">${["May","Jun","Jul","Aug","Sep","Oct"].map(m=>`<span>${m}</span>`).join("")}</div>
+            </div>
+          </div>
+        </td></tr>`;
+      }
+    }
+  });
+
+  document.getElementById("rows").innerHTML = html ||
+    `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:30px">No keys match</td></tr>`;
+  document.getElementById("pager-info").textContent =
+    `Showing ${rows.length ? state.page*PAGE_SIZE+1 : 0}–${Math.min(rows.length,(state.page+1)*PAGE_SIZE)} of ${rows.length} keys`;
+  document.getElementById("prev").disabled = state.page===0;
+  document.getElementById("next").disabled = state.page>=pages-1;
+}
+
+// ---------- host explorer ----------
+function renderHostList() {
+  const q = document.getElementById("hostSearch").value.trim().toLowerCase();
+  const list = HOSTS.filter(h => h.name.toLowerCase().includes(q));
+  document.getElementById("hostItems").innerHTML = list.map(h => `
+    <div class="host-item ${h.name===state.host?'active':''}" onclick="state.host='${h.name}';renderHostList()">
+      ${h.name}
+      <div class="sub">${h.os} · ${h.stage} · ${h.dc}</div>
+    </div>`).join("") || `<div style="padding:14px;color:var(--muted)">No hosts</div>`;
+}
+function renderHostFiles() {
+  const files = HOST_FILES[state.host] || defaultHostFiles();
+  document.getElementById("hostName-passwd").textContent = state.host;
+  document.getElementById("hostName-group").textContent = state.host;
+  const row = ([k,v,st]) => `<tr>
+      <td><span class="dot ${st}"></span></td>
+      <td><b>${k}</b></td>
+      <td class="mono">${v}</td></tr>`;
+  document.getElementById("passwdRows").innerHTML = files.passwd.map(row).join("");
+  document.getElementById("groupRows").innerHTML = files.group.map(row).join("");
+}
+
+// ---------- controls ----------
+function switchView(v) {
+  state.view = v;
+  document.getElementById("vt-keys").classList.toggle("active", v==="keys");
+  document.getElementById("vt-hosts").classList.toggle("active", v==="hosts");
+  document.getElementById("view-keys").style.display = v==="keys" ? "" : "none";
+  document.getElementById("view-hosts").style.display = v==="hosts" ? "" : "none";
+}
+function toggleCompare() {
+  state.compare = document.getElementById("compareChk").checked;
+  document.getElementById("scanB-wrap").style.display = state.compare ? "" : "none";
+  document.getElementById("sort-delta").style.display = state.compare ? "" : "none";
+  state.page = 0; state.open = null;
+  render();
+}
+function switchTab(el, tab) {
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  el.classList.add("active");
+  state.tab = tab; state.page = 0; state.open = null;
+  render();
+}
+function page(dir) { state.page += dir===1?1:-1; render(); }
+function toggle(id) { state.open = state.open===id ? null : id; render(); }
+
+renderHostList();
+renderHostFiles();
+render();
+</script>
+</body>
+</html>

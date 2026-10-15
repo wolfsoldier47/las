@@ -21,6 +21,7 @@ type SnapshotRepository interface {
 	GetByScanResultAndType(ctx context.Context, scanResultID uuid.UUID, fileType models.FileType) (*models.HostFileSnapshot, error)
 	GetLatestByHostAndType(ctx context.Context, hostID uuid.UUID, fileType models.FileType) (*models.HostFileSnapshot, error)
 	ListByHostAndType(ctx context.Context, hostID uuid.UUID, fileType models.FileType, limit int) ([]models.HostFileSnapshot, error)
+	ListFileKeyStats(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, page, limit int) ([]models.FileKeyStat, int, error)
 	CreateChange(ctx context.Context, change *models.HostFileChange) error
 }
 
@@ -184,6 +185,54 @@ func (r *PgSnapshotRepository) ListByHostAndType(ctx context.Context, hostID uui
 		return nil, fmt.Errorf("iterate snapshots: %w", err)
 	}
 	return snapshots, nil
+}
+
+// ListFileKeyStats aggregates entry keys across every host snapshot of a scan
+// job for one file type. Snapshot raw_content stores one "key:value" line per
+// entry, so the key is split out per line and counted per host.
+func (r *PgSnapshotRepository) ListFileKeyStats(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, page, limit int) ([]models.FileKeyStat, int, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	statsQuery := `
+		SELECT key, COUNT(DISTINCT host_id) AS host_count, COUNT(*) AS occurrence_count
+		FROM (
+			SELECT s.host_id, split_part(line, ':', 1) AS key
+			FROM host_file_snapshots s,
+			     LATERAL unnest(string_to_array(s.raw_content, E'\n')) AS line
+			WHERE s.scan_job_id = $1 AND s.file_type = $2 AND btrim(line) <> ''
+		) entries
+		GROUP BY key
+	`
+
+	var total int
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+statsQuery+") t", scanJobID, fileType).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count file key stats: %w", err)
+	}
+
+	rows, err := r.db.QueryContext(ctx, statsQuery+" ORDER BY host_count DESC, key ASC LIMIT $3 OFFSET $4",
+		scanJobID, fileType, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list file key stats: %w", err)
+	}
+	defer rows.Close()
+
+	var stats []models.FileKeyStat
+	for rows.Next() {
+		var stat models.FileKeyStat
+		if err := rows.Scan(&stat.Key, &stat.HostCount, &stat.OccurrenceCount); err != nil {
+			return nil, 0, fmt.Errorf("scan file key stat: %w", err)
+		}
+		stats = append(stats, stat)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate file key stats: %w", err)
+	}
+	return stats, total, nil
 }
 
 // CreateChange inserts a host file change record.

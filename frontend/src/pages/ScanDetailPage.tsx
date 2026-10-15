@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import api, { downloadScanReport } from '../api/client'
+import OsBadge from '../components/OsBadge'
 
 interface Incident {
   id: string
@@ -52,6 +53,7 @@ interface ScanJob {
   id: string
   ansible_job_id?: string
   job_template_id: number
+  os_type?: string
   limit?: string
   status: string
   initiated_by?: string
@@ -61,6 +63,121 @@ interface ScanJob {
   failed_host_names?: string[]
   baseline_snapshot?: BaselineSnapshot[]
   created_at: string
+}
+
+interface FileKeyStat {
+  key: string
+  host_count: number
+  occurrence_count: number
+}
+
+interface FileKeyStatsData {
+  items: FileKeyStat[]
+  total: number
+  page: number
+  limit: number
+}
+
+// FileKeyStatsCard lists all entry keys of one file type across the scan's
+// hosts — accounts for /etc/passwd, groups for /etc/group — with per-key host
+// and occurrence counts, server-paginated.
+function FileKeyStatsCard({ scanId, fileType, title, noun }: { scanId: string; fileType: 'passwd' | 'group'; title: string; noun: string }) {
+  const [data, setData] = useState<FileKeyStatsData | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setData(null)
+    setPage(1)
+  }, [scanId, fileType])
+
+  useEffect(() => {
+    api
+      .get(`/scans/${scanId}/file-keys?file_type=${fileType}&page=${page}&limit=${pageSize}`)
+      .then((res) => setData(res.data))
+      .catch((err) => setError(err.response?.data?.error || err.message))
+  }, [scanId, fileType, page, pageSize])
+
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / pageSize))
+  const safePage = Math.min(page, totalPages)
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-border flex justify-between items-center">
+        <div>
+          <div className="font-semibold text-sm text-foreground">{title}</div>
+          <div className="text-xs text-muted-foreground mt-0.5">
+            {data ? `${total.toLocaleString()} unique ${noun} found across all hosts in this scan` : 'Loading...'}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value))
+              setPage(1)
+            }}
+            className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-foreground outline-none"
+          >
+            <option value={25}>25 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+          </select>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="px-2 py-1 border border-border rounded-lg text-xs disabled:opacity-50 hover:bg-secondary transition-all"
+            >
+              Prev
+            </button>
+            <span className="text-xs text-muted-foreground px-2">
+              {safePage} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="px-2 py-1 border border-border rounded-lg text-xs disabled:opacity-50 hover:bg-secondary transition-all"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+      {error ? (
+        <div className="px-5 py-4 text-xs text-red-500">{error}</div>
+      ) : !data ? (
+        <div className="px-5 py-4 text-xs text-muted-foreground">Loading...</div>
+      ) : data.items.length === 0 ? (
+        <div className="px-5 py-4 text-xs text-muted-foreground">No {noun} recorded for this scan.</div>
+      ) : (
+        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-card">
+              <tr className="border-b border-border">
+                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground w-16">#</th>
+                <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Key</th>
+                <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">Hosts</th>
+                <th className="px-5 py-3 text-right text-xs font-medium text-muted-foreground">Occurrences</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((stat, idx) => (
+                <tr key={stat.key} className="border-b border-border/50">
+                  <td className="px-5 py-2.5 text-muted-foreground text-xs">{(safePage - 1) * pageSize + idx + 1}</td>
+                  <td className="px-5 py-2.5 text-foreground font-mono text-xs">{stat.key}</td>
+                  <td className="px-5 py-2.5 text-right text-foreground text-xs font-medium">{stat.host_count.toLocaleString()}</td>
+                  <td className="px-5 py-2.5 text-right text-muted-foreground text-xs">{stat.occurrence_count.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface ScanDetailData {
@@ -221,6 +338,7 @@ export default function ScanDetailPage() {
           <div><span className="text-muted-foreground">Job ID:</span> <span className="font-mono text-xs">{detail.job.id}</span></div>
           <div><span className="text-muted-foreground">AAP Job ID:</span> <span className="font-mono text-xs">{detail.job.ansible_job_id || '-'}</span></div>
           <div><span className="text-muted-foreground">Template ID:</span> {detail.job.job_template_id}</div>
+          <div className="flex items-center gap-1.5"><span className="text-muted-foreground">Target Cluster:</span> <OsBadge osType={detail.job.os_type} /></div>
           <div><span className="text-muted-foreground">Initiated By:</span> {detail.job.initiated_by || '-'}</div>
           <div><span className="text-muted-foreground">Limit:</span> {detail.job.limit || '-'}</div>
           <div><span className="text-muted-foreground">Status:</span> <StatusBadge status={detail.job.status} /></div>
@@ -487,6 +605,23 @@ export default function ScanDetailPage() {
           </div>
         )}
       </div>
+
+      {id && (
+        <>
+          <FileKeyStatsCard
+            scanId={id}
+            fileType="passwd"
+            title="Account Info (/etc/passwd)"
+            noun="accounts"
+          />
+          <FileKeyStatsCard
+            scanId={id}
+            fileType="group"
+            title="Group Info (/etc/group)"
+            noun="groups"
+          />
+        </>
+      )}
     </div>
   )
 }

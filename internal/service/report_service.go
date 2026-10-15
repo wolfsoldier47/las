@@ -8,6 +8,8 @@ import (
 
 	"github.com/go-pdf/fpdf"
 	"github.com/google/uuid"
+
+	"ulas-service/models"
 )
 
 // ReportService generates downloadable reports for scan jobs.
@@ -111,6 +113,23 @@ func initiatedBy(initiator string) string {
 	return initiator
 }
 
+// clusterLabel renders the scan job's target OS/cluster for display. Jobs
+// created before os_type existed are reported as Linux, matching the DB
+// COALESCE default in the scan repository queries.
+func clusterLabel(osType models.OSType) string {
+	switch osType {
+	case models.OSTypeLinux:
+		return "Linux"
+	case models.OSTypeSolaris:
+		return "Solaris"
+	case models.OSTypeAIX:
+		return "AIX"
+	case "":
+		return "Linux"
+	}
+	return string(osType)
+}
+
 // GenerateScanReport builds a PDF report for a scan job.
 func (s *DefaultReportService) GenerateScanReport(ctx context.Context, scanJobID uuid.UUID) ([]byte, error) {
 	detail, err := s.scanService.GetScanDetail(ctx, scanJobID, true)
@@ -143,6 +162,7 @@ func (s *DefaultReportService) GenerateScanReport(ctx context.Context, scanJobID
 		{"Job ID", detail.Job.ID.String()},
 		{"AAP Job ID", detail.Job.AnsibleJobID},
 		{"Template ID", fmt.Sprintf("%d", detail.Job.JobTemplateID)},
+		{"Target Cluster", clusterLabel(detail.Job.OSType)},
 		{"Limit", detail.Job.Limit},
 		{"Status", string(detail.Job.Status)},
 		{"Initiated By", initiatedBy(detail.Job.InitiatedBy)},

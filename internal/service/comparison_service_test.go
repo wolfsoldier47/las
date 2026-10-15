@@ -112,6 +112,9 @@ func (r *memSnapshotRepo) GetLatestByHostAndType(ctx context.Context, hostID uui
 func (r *memSnapshotRepo) ListByHostAndType(ctx context.Context, hostID uuid.UUID, fileType models.FileType, limit int) ([]models.HostFileSnapshot, error) {
 	return nil, nil
 }
+func (r *memSnapshotRepo) ListFileKeyStats(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, page, limit int) ([]models.FileKeyStat, int, error) {
+	return nil, 0, nil
+}
 func (r *memSnapshotRepo) CreateChange(ctx context.Context, change *models.HostFileChange) error {
 	return nil
 }

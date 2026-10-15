@@ -38,6 +38,9 @@ func (f *fakeScanServiceForReport) GetScanDetailPaginated(context.Context, uuid.
 func (f *fakeScanServiceForReport) GetHostResult(context.Context, uuid.UUID, uuid.UUID) (*HostScanDetail, error) {
 	return nil, nil
 }
+func (f *fakeScanServiceForReport) ListFileKeyStats(context.Context, uuid.UUID, models.FileType, int, int) (*PaginatedFileKeyStats, error) {
+	return nil, nil
+}
 func (f *fakeScanServiceForReport) GetScanJobByAnsibleJobID(context.Context, string) (*models.ScanJob, error) {
 	return nil, nil
 }

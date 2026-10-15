@@ -114,6 +114,15 @@ type ScanJobSummary struct {
 	TotalAllowedDeviations int `json:"total_allowed_deviations"`
 }
 
+// FileKeyStat aggregates one entry key (account or group name) across all
+// hosts of a single scan job. HostCount is the number of distinct hosts the
+// key appears on; OccurrenceCount is the total number of lines it appeared on.
+type FileKeyStat struct {
+	Key             string `json:"key"`
+	HostCount       int    `json:"host_count"`
+	OccurrenceCount int    `json:"occurrence_count"`
+}
+
 // AllowedDeviationFound records a baseline deviation that is covered by an exception.
 type AllowedDeviationFound struct {
 	FileType      FileType `json:"file_type"`

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api, { downloadScanReport } from '../api/client'
 import { isAdmin } from '../auth/permission'
+import OsBadge from '../components/OsBadge'
 
 interface BaselineVersion {
   host_id?: string
@@ -20,6 +21,7 @@ interface ScanJob {
   id: string
   ansible_job_id?: string
   job_template_id: number
+  os_type?: string
   limit?: string
   status: string
   initiated_by?: string
@@ -315,6 +317,7 @@ export default function ScanHistoryPage() {
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Job ID</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">AAP Job ID</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Template ID</th>
+                    <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Target Cluster</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Initiated By</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Limit</th>
                     <th className="px-5 py-3 text-left text-xs font-medium text-muted-foreground">Status</th>
@@ -336,6 +339,7 @@ export default function ScanHistoryPage() {
                       </td>
                       <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{scan.ansible_job_id || '-'}</td>
                       <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{scan.job_template_id}</td>
+                      <td className="px-5 py-3"><OsBadge osType={scan.os_type} /></td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">{scan.initiated_by || '-'}</td>  
                       <td className="px-5 py-3 text-muted-foreground text-xs">{scan.limit || '-'}</td>
                       <td className="px-5 py-3"><StatusBadge status={scan.status} /></td>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { SectionCards } from '../components/SectionCards'
 import { DataTable } from '../components/DataTable'
 import { ScanDetail } from '../components/ScanDetail'
+import OsBadge from '../components/OsBadge'
 import api from '../api/client'
 
 interface AllowedDeviation {
@@ -32,6 +33,7 @@ interface HostResult {
 interface ScanJob {
   id: string
   status: string
+  os_type?: string
 }
 
 interface SelectedHost {
@@ -59,8 +61,11 @@ function ActiveJobBanner({ job }: { job?: ScanJob | null }) {
             <path d="M12 2v4"/><path d="m16.2 7.8 2.9-2.9"/><path d="M18 12h4"/><path d="m16.2 16.2 2.9 2.9"/><path d="M12 18v4"/><path d="m4.9 19.1 2.9-2.9"/><path d="M2 12h4"/><path d="m4.9 4.9 2.9 2.9"/>
           </svg>
         </div>
-        <div>
-          <div className="text-sm font-semibold text-primary">Scan Job {job.id?.slice(0, 8) || '—'} is Running</div>
+          <div>
+          <div className="text-sm font-semibold text-primary flex items-center gap-2">
+            Scan Job {job.id?.slice(0, 8) || '—'} is Running
+            {job.os_type && <OsBadge osType={job.os_type} />}
+          </div>
           <div className="text-xs text-muted-foreground mt-0.5">Results will appear when the job completes</div>
         </div>
       </div>

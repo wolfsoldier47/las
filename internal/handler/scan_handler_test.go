@@ -50,6 +50,9 @@ func (f *fakeScanService) GetScanDetailPaginated(context.Context, uuid.UUID, int
 func (f *fakeScanService) GetHostResult(context.Context, uuid.UUID, uuid.UUID) (*service.HostScanDetail, error) {
 	return nil, nil
 }
+func (f *fakeScanService) ListFileKeyStats(context.Context, uuid.UUID, models.FileType, int, int) (*service.PaginatedFileKeyStats, error) {
+	return nil, nil
+}
 func (f *fakeScanService) GetScanJobByAnsibleJobID(context.Context, string) (*models.ScanJob, error) {
 	return nil, nil
 }
