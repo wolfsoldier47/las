@@ -5748,3 +5748,6 @@
 {"time":"2026-10-16T00:57:34.55506086+08:00","level":"INFO","msg":"Configuration loaded successfully"}
 {"time":"2026-10-16T00:57:34.917136543+08:00","level":"INFO","msg":"DB initialized successfully"}
 {"time":"2026-10-16T00:57:34.918581913+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-10-16T01:07:35.128834797+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-10-16T01:07:35.521005872+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-10-16T01:07:35.533526534+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
