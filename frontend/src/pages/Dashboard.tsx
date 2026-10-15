@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { SectionCards } from '../components/SectionCards'
 import { DataTable } from '../components/DataTable'
 import { ScanDetail } from '../components/ScanDetail'
+import { ScanKeyExplorer } from '../components/ScanKeyExplorer'
 import OsBadge from '../components/OsBadge'
 import api from '../api/client'
 
@@ -144,6 +145,7 @@ export default function Dashboard() {
           }}
         />
       </div>
+      <ScanKeyExplorer scanId={selectedScanId} />
       {hostDetail && <ScanDetail host={hostDetail} />}
       <div className="text-center text-xs text-muted-foreground py-2">Ulas Compliance Engine v0.1.0</div>
     </div>

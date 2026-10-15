@@ -123,6 +123,13 @@ type FileKeyStat struct {
 	OccurrenceCount int    `json:"occurrence_count"`
 }
 
+// FileKeyHost is one host carrying a given entry key in a scan, along with
+// the matching file line ("key:value" with the key prefix kept).
+type FileKeyHost struct {
+	Hostname string `json:"hostname"`
+	Value    string `json:"value"`
+}
+
 // AllowedDeviationFound records a baseline deviation that is covered by an exception.
 type AllowedDeviationFound struct {
 	FileType      FileType `json:"file_type"`

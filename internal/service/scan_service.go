@@ -34,6 +34,7 @@ type ScanService interface {
 	GetScanDetailPaginated(ctx context.Context, scanJobID uuid.UUID, page, limit int, includeIncidents, onlyFailing bool) (*PaginatedScanDetail, error)
 	GetHostResult(ctx context.Context, scanJobID, hostID uuid.UUID) (*HostScanDetail, error)
 	ListFileKeyStats(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, page, limit int) (*PaginatedFileKeyStats, error)
+	ListFileKeyHosts(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, key, search string, page, limit int) (*PaginatedFileKeyHosts, error)
 	GetScanJobByAnsibleJobID(ctx context.Context, ansibleJobID string) (*models.ScanJob, error)
 	PollActiveScans(ctx context.Context) error
 }
@@ -65,6 +66,14 @@ type PaginatedScanDetail struct {
 // of a scan job (accounts for /etc/passwd, groups for /etc/group).
 type PaginatedFileKeyStats struct {
 	Items []models.FileKeyStat `json:"items"`
+	Total int                  `json:"total"`
+	Page  int                  `json:"page"`
+	Limit int                  `json:"limit"`
+}
+
+// PaginatedFileKeyHosts is a page of hosts carrying one entry key in a scan.
+type PaginatedFileKeyHosts struct {
+	Items []models.FileKeyHost `json:"items"`
 	Total int                  `json:"total"`
 	Page  int                  `json:"page"`
 	Limit int                  `json:"limit"`
@@ -585,6 +594,33 @@ func (s *DefaultScanService) ListFileKeyStats(ctx context.Context, scanJobID uui
 
 	return &PaginatedFileKeyStats{
 		Items: stats,
+		Total: total,
+		Page:  page,
+		Limit: limit,
+	}, nil
+}
+
+// ListFileKeyHosts returns the hosts carrying one entry key in one file type
+// of a scan job, paginated, with an optional case-insensitive hostname filter.
+// It returns 404 when the scan job does not exist.
+func (s *DefaultScanService) ListFileKeyHosts(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, key, search string, page, limit int) (*PaginatedFileKeyHosts, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key must not be empty")
+	}
+	if _, err := s.scanRepo.GetScanJobByID(ctx, scanJobID); err != nil {
+		return nil, err
+	}
+
+	hosts, total, err := s.snapshotRepo.ListFileKeyHosts(ctx, scanJobID, fileType, key, search, page, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list file key hosts: %w", err)
+	}
+	if hosts == nil {
+		hosts = []models.FileKeyHost{}
+	}
+
+	return &PaginatedFileKeyHosts{
+		Items: hosts,
 		Total: total,
 		Page:  page,
 		Limit: limit,

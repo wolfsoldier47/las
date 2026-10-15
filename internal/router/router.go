@@ -81,6 +81,7 @@ func New(
 		api.GET("/scans/:id", scans.GetScan)
 		api.GET("/scans/:id/hosts/:hostId", scans.GetHostResult)
 		api.GET("/scans/:id/file-keys", scans.GetScanFileKeyStats)
+		api.GET("/scans/:id/file-keys/:key/hosts", scans.GetScanFileKeyHosts)
 		api.GET("/scans/:id/report", reports.DownloadScanReport)
 
 		api.GET("/incidents", incidents.ListIncidents)

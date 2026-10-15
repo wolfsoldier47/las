@@ -115,6 +115,9 @@ func (r *memSnapshotRepo) ListByHostAndType(ctx context.Context, hostID uuid.UUI
 func (r *memSnapshotRepo) ListFileKeyStats(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, page, limit int) ([]models.FileKeyStat, int, error) {
 	return nil, 0, nil
 }
+func (r *memSnapshotRepo) ListFileKeyHosts(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, key, search string, page, limit int) ([]models.FileKeyHost, int, error) {
+	return nil, 0, nil
+}
 func (r *memSnapshotRepo) CreateChange(ctx context.Context, change *models.HostFileChange) error {
 	return nil
 }

@@ -22,6 +22,7 @@ type SnapshotRepository interface {
 	GetLatestByHostAndType(ctx context.Context, hostID uuid.UUID, fileType models.FileType) (*models.HostFileSnapshot, error)
 	ListByHostAndType(ctx context.Context, hostID uuid.UUID, fileType models.FileType, limit int) ([]models.HostFileSnapshot, error)
 	ListFileKeyStats(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, page, limit int) ([]models.FileKeyStat, int, error)
+	ListFileKeyHosts(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, key, search string, page, limit int) ([]models.FileKeyHost, int, error)
 	CreateChange(ctx context.Context, change *models.HostFileChange) error
 }
 
@@ -233,6 +234,72 @@ func (r *PgSnapshotRepository) ListFileKeyStats(ctx context.Context, scanJobID u
 		return nil, 0, fmt.Errorf("iterate file key stats: %w", err)
 	}
 	return stats, total, nil
+}
+
+// ListFileKeyHosts returns the hosts of a scan that carry one entry key in
+// one file type, along with the matching raw line. Paginated; total is the
+// number of distinct hosts with the key. An optional search filters hostnames
+// (case-insensitive substring).
+func (r *PgSnapshotRepository) ListFileKeyHosts(ctx context.Context, scanJobID uuid.UUID, fileType models.FileType, key, search string, page, limit int) ([]models.FileKeyHost, int, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	hostFilter := `
+		s.scan_job_id = $1 AND s.file_type = $2
+		AND EXISTS (
+			SELECT 1
+			FROM unnest(string_to_array(s.raw_content, E'\n')) AS line
+			WHERE split_part(line, ':', 1) = $3 AND btrim(line) <> ''
+		)`
+	args := []interface{}{scanJobID, fileType, key}
+	if search != "" {
+		hostFilter += ` AND h.hostname ILIKE '%' || $4 || '%'`
+		args = append(args, search)
+	}
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM host_file_snapshots s
+		JOIN hosts h ON h.id = s.host_id
+		WHERE ` + hostFilter
+	var total int
+	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count file key hosts: %w", err)
+	}
+
+	query := `
+		SELECT h.hostname,
+		       (SELECT line FROM unnest(string_to_array(s.raw_content, E'\n')) AS line
+		        WHERE split_part(line, ':', 1) = $3 AND btrim(line) <> ''
+		        LIMIT 1)
+		FROM host_file_snapshots s
+		JOIN hosts h ON h.id = s.host_id
+		WHERE ` + hostFilter + `
+		ORDER BY h.hostname ASC
+		LIMIT $` + fmt.Sprintf("%d", len(args)+1) + ` OFFSET $` + fmt.Sprintf("%d", len(args)+2)
+
+	rows, err := r.db.QueryContext(ctx, query, append(args, limit, (page-1)*limit)...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list file key hosts: %w", err)
+	}
+	defer rows.Close()
+
+	var hosts []models.FileKeyHost
+	for rows.Next() {
+		var host models.FileKeyHost
+		if err := rows.Scan(&host.Hostname, &host.Value); err != nil {
+			return nil, 0, fmt.Errorf("scan file key host: %w", err)
+		}
+		hosts = append(hosts, host)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate file key hosts: %w", err)
+	}
+	return hosts, total, nil
 }
 
 // CreateChange inserts a host file change record.

@@ -132,6 +132,45 @@ func (h *ScanHandler) GetScanFileKeyStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+// GetScanFileKeyHosts handles GET /api/scans/:id/file-keys/:key/hosts.
+// Lists the hosts of a scan that carry one entry key (account or group),
+// along with the matching file line. Query params: file_type=passwd|group
+// (required), page, limit.
+func (h *ScanHandler) GetScanFileKeyHosts(c *gin.Context) {
+	scanID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid scan id"})
+		return
+	}
+
+	key := c.Param("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key must not be empty"})
+		return
+	}
+
+	fileType := models.FileType(c.Query("file_type"))
+	if fileType != models.FileTypePasswd && fileType != models.FileTypeGroup {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file_type must be passwd or group"})
+		return
+	}
+
+	page, limit, _ := ParsePagination(c)
+	search := c.Query("search")
+
+	hosts, err := h.scanService.ListFileKeyHosts(c.Request.Context(), scanID, fileType, key, search, page, limit)
+	if err != nil {
+		if errors.Is(err, repository.ErrScanJobNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "scan job not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, hosts)
+}
+
 // GetHostResult handles GET /api/scans/:id/hosts/:hostId.
 // Returns the full details for a single host within a scan job, including incidents.
 func (h *ScanHandler) GetHostResult(c *gin.Context) {
