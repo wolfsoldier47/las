@@ -5721,3 +5721,12 @@
 {"time":"2026-10-15T22:20:58.842038737+08:00","level":"INFO","msg":"Configuration loaded successfully"}
 {"time":"2026-10-15T22:20:59.122912132+08:00","level":"INFO","msg":"DB initialized successfully"}
 {"time":"2026-10-15T22:20:59.124059436+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-10-15T22:24:02.131017582+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-10-15T22:24:02.367422654+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-10-15T22:24:02.368397901+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}
+{"time":"2026-10-15T22:29:00.389643117+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-10-15T22:29:00.722382004+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-10-15T22:29:00.734595282+08:00","level":"INFO","msg":"starting ulas-service","addr":":18080","stage":"DEV"}
+{"time":"2026-10-15T22:38:47.914676946+08:00","level":"INFO","msg":"Configuration loaded successfully"}
+{"time":"2026-10-15T22:38:48.186829141+08:00","level":"INFO","msg":"DB initialized successfully"}
+{"time":"2026-10-15T22:38:48.187702589+08:00","level":"INFO","msg":"starting ulas-service","addr":":8080","stage":"DEV"}

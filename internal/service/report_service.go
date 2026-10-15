@@ -130,6 +130,35 @@ func clusterLabel(osType models.OSType) string {
 	return string(osType)
 }
 
+// printFileKeyStatsSection renders the aggregated key listing for one file
+// type — accounts for /etc/passwd, groups for /etc/group — with per-key host
+// and occurrence counts across all hosts of the scan.
+func printFileKeyStatsSection(pdf *fpdf.Fpdf, title string, stats []models.FileKeyStat, total int, usableWidth, pageLimit float64) {
+	pdf.Ln(4)
+	pdf.SetFont("Helvetica", "B", 12)
+	pdf.Cell(0, 8, fmt.Sprintf("%s (%d unique)", title, total))
+	pdf.Ln(10)
+
+	headers := []string{"Key", "Hosts", "Occurrences"}
+	widths := []float64{usableWidth - 60, 30, 30}
+	lineHeight := 6.0
+
+	printWrappedHeader(pdf, headers, widths, lineHeight, pageLimit)
+	pdf.SetFont("Helvetica", "", 9)
+
+	for _, stat := range stats {
+		cells := []string{
+			stat.Key,
+			fmt.Sprintf("%d", stat.HostCount),
+			fmt.Sprintf("%d", stat.OccurrenceCount),
+		}
+		printWrappedRow(pdf, cells, widths, lineHeight, false, pageLimit, func() {
+			printWrappedHeader(pdf, headers, widths, lineHeight, pageLimit)
+			pdf.SetFont("Helvetica", "", 9)
+		})
+	}
+}
+
 // GenerateScanReport builds a PDF report for a scan job.
 func (s *DefaultReportService) GenerateScanReport(ctx context.Context, scanJobID uuid.UUID) ([]byte, error) {
 	detail, err := s.scanService.GetScanDetail(ctx, scanJobID, true)
@@ -189,6 +218,23 @@ func (s *DefaultReportService) GenerateScanReport(ctx context.Context, scanJobID
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetXY(x+labelWidth, y)
 		pdf.MultiCell(valueWidth, 6, row[1], "0", "L", false)
+	}
+
+	// Aggregated account/group listings across all hosts of the scan.
+	// The listing is unique keys only, so a large page size fetches it in one call.
+	for _, ft := range []models.FileType{models.FileTypePasswd, models.FileTypeGroup} {
+		stats, err := s.scanService.ListFileKeyStats(ctx, scanJobID, ft, 1, 100000)
+		if err != nil {
+			return nil, fmt.Errorf("load %s key stats for report: %w", ft, err)
+		}
+		if stats == nil || stats.Total == 0 {
+			continue
+		}
+		title := "Account Info (/etc/passwd)"
+		if ft == models.FileTypeGroup {
+			title = "Group Info (/etc/group)"
+		}
+		printFileKeyStatsSection(pdf, title, stats.Items, stats.Total, usableWidth, pageLimit)
 	}
 
 	// Baselines

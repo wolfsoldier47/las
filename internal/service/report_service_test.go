@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
+	"compress/zlib"
 	"context"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -11,7 +14,11 @@ import (
 	"ulas-service/models"
 )
 
-type fakeScanServiceForReport struct{ detail *ScanDetail }
+type fakeScanServiceForReport struct {
+	detail *ScanDetail
+	// fileKeyStats is returned for any file type; nil skips the report sections.
+	fileKeyStats *PaginatedFileKeyStats
+}
 
 func (f *fakeScanServiceForReport) InitiateScan(context.Context, string, string, models.OSType) (*models.ScanJob, error) {
 	return nil, nil
@@ -39,7 +46,7 @@ func (f *fakeScanServiceForReport) GetHostResult(context.Context, uuid.UUID, uui
 	return nil, nil
 }
 func (f *fakeScanServiceForReport) ListFileKeyStats(context.Context, uuid.UUID, models.FileType, int, int) (*PaginatedFileKeyStats, error) {
-	return nil, nil
+	return f.fileKeyStats, nil
 }
 func (f *fakeScanServiceForReport) GetScanJobByAnsibleJobID(context.Context, string) (*models.ScanJob, error) {
 	return nil, nil
@@ -122,3 +129,72 @@ func TestGenerateScanReport_LongText(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+func TestGenerateScanReport_FileKeyStatsSections(t *testing.T) {
+	jobID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	fake := &fakeScanServiceForReport{
+		detail: &ScanDetail{
+			Job: &models.ScanJob{
+				ID:            jobID,
+				JobTemplateID: 42,
+				Status:        models.ScanJobStatusCompleted,
+				CreatedAt:     time.Now(),
+			},
+			Results: []HostScanDetail{},
+		},
+		fileKeyStats: &PaginatedFileKeyStats{
+			Items: []models.FileKeyStat{
+				{Key: "root", HostCount: 100, OccurrenceCount: 100},
+				{Key: "svcacct", HostCount: 96, OccurrenceCount: 97},
+			},
+			Total: 2,
+			Page:  1,
+			Limit: 100000,
+		},
+	}
+
+	svc := NewReportService(fake)
+	data, err := svc.GenerateScanReport(context.Background(), jobID)
+	if err != nil {
+		t.Fatalf("generate report: %v", err)
+	}
+	// fpdf compresses content streams by default; inflate them before asserting.
+	text := inflatePDFStreams(t, data)
+	// fpdf escapes parentheses in text, so match the titles without them.
+	for _, want := range []string{"Account Info", "Group Info", "2 unique", "svcacct"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("expected report to contain %q", want)
+		}
+	}
+}
+
+// inflatePDFStreams extracts and decompresses every stream in a PDF so tests
+// can assert on the rendered text.
+func inflatePDFStreams(t *testing.T, data []byte) string {
+	t.Helper()
+	var text strings.Builder
+	for offset := 0; offset < len(data); {
+		start := strings.Index(string(data[offset:]), "stream\n")
+		if start < 0 {
+			break
+		}
+		start += offset + len("stream\n")
+		end := strings.Index(string(data[start:]), "\nendstream")
+		if end < 0 {
+			break
+		}
+		stream := data[start : start+end]
+		offset = start + end
+		zr, err := zlib.NewReader(bytes.NewReader(stream))
+		if err != nil {
+			continue
+		}
+		inflated, err := io.ReadAll(zr)
+		zr.Close()
+		if err != nil {
+			continue
+		}
+		text.Write(inflated)
+	}
+	return text.String()
+}
